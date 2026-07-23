@@ -15,31 +15,30 @@ const AIInpaint = (function () {
 
   // ============ 可配置区（地址失效时改这里） ============
   const CONFIG = {
-    // onnxruntime-web 运行时（含 wasm）。用 jsDelivr CDN。
+    // onnxruntime-web 运行时（含 wasm）。用 jsDelivr CDN（有 CORS + 国内节点）。
     ortScript: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js",
     wasmPaths: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/",
 
-    // LaMa ONNX 模型。固定 512x512 输入。约 200MB。
-    // 多个下载源，按顺序尝试，任一成功即可（国内优先用 hf-mirror 镜像，
-    // 原站 huggingface.co 在国内常超时）。地址失效时增删这里即可。
-    modelFull: [
-      "https://hf-mirror.com/Carve/LaMa-ONNX/resolve/main/lama_fp32.onnx",
-      "https://huggingface.co/Carve/LaMa-ONNX/resolve/main/lama_fp32.onnx",
-    ],
-    // 手机同源列表（暂与桌面相同；若找到稳定量化小模型，替换这里）
-    modelMobile: [
-      "https://hf-mirror.com/Carve/LaMa-ONNX/resolve/main/lama_fp32.onnx",
-      "https://huggingface.co/Carve/LaMa-ONNX/resolve/main/lama_fp32.onnx",
-    ],
+    // MI-GAN inpainting 模型（migan_pipeline_v2.onnx，约 28MB，内置前后处理）。
+    // 已放进本仓库，同源加载 —— 不再有 CORS/跨域问题，国内可直连 GitHub Pages。
+    // 若想换源，把下面改成完整 URL 列表即可（会按顺序尝试）。
+    modelFull: ["./migan_pipeline_v2.onnx"],
+    modelMobile: ["./migan_pipeline_v2.onnx"],
 
-    // 模型固定输入尺寸
-    size: 512,
+    // 处理时的最大边长（原生分辨率太大手机会 OOM，超过则等比缩小，
+    // 最终只把掩膜区域贴回原图，非掩膜区域仍是原始清晰像素）。
+    maxSide: 1024,
+    // 尺寸需为该值的整数倍（MI-GAN 下采样要求，8 通常安全）
+    multiple: 8,
 
-    // 模型的输入/输出张量名与数值约定（Carve/LaMa-ONNX 规格）
-    inputImageName: "image",   // float32 [1,3,512,512], RGB, 0..1
-    inputMaskName: "mask",     // float32 [1,1,512,512], 值 0 或 1，1=待修复
-    // 输出名在加载后自动读取（不同导出可能叫 output / out 等）
-    outputRange255: true,      // Carve 版输出是 0..255（不是 0..1）
+    // 张量名（从模型文件解析所得）
+    inputImageName: "image",   // uint8 [1,3,H,W], RGB, 0..255
+    inputMaskName: "mask",     // uint8 [1,1,H,W]
+    // 掩膜极性：涂抹处（待去除）应填哪个值。
+    // MI-GAN 约定通常为“已知区=255，待修复=0”；若结果反了（把该留的抹了），
+    // 把此值从 0 改成 255（并相应把 keep 值改成 0）即可一键翻转。
+    maskHoleValue: 0,          // 待去除区域的值
+    maskKeepValue: 255,        // 保留区域的值
   };
   // ====================================================
 
@@ -161,106 +160,95 @@ const AIInpaint = (function () {
   }
 
   // ---------------------------------------------------------------
-  // 核心推理：给定源图 canvas 和掩膜 canvas（红色=待去除），
-  // 返回一个填好水印区域的 ImageData（与原图同尺寸）。
+  // 核心推理（MI-GAN pipeline，uint8 输入/输出，原生分辨率、动态尺寸）：
+  //   image: uint8 [1,3,H,W] RGB 0..255（NCHW）
+  //   mask:  uint8 [1,1,H,W]（保留区/待修复区，极性见 CONFIG）
+  //   result:uint8 [1,3,H,W]
   //
-  // LaMa 固定 512x512，所以对任意尺寸的图，做法是：
-  //   1. 把整图缩放进 512x512（保持比例，pad 到方形）
-  //   2. 掩膜同样缩放
-  //   3. 推理得到 512x512 修复结果
-  //   4. 只把“掩膜命中的区域”从结果缩放回原图对应位置（未涂抹区域保持原始像素，避免全图被重采样变糊）
-  //
-  // 说明：整图塞进 512 会损失分辨率，但 LaMa 对水印这类局部修复足够；
-  //       只回贴掩膜区域可保证图片其它部分 100% 清晰无损。
+  // 做法：
+  //   1. 把原图等比缩放到 <=maxSide 且宽高为 multiple 的整数倍（模型下采样要求）
+  //   2. 掩膜同样缩放（最近邻，保持硬边）
+  //   3. 推理得到同尺寸结果
+  //   4. 只把“掩膜命中的区域”缩放回原图对应位置贴上，
+  //      非掩膜区域保持原始像素 → 图片其它部分 100% 清晰无损
   // ---------------------------------------------------------------
   async function inpaint(srcCanvas, maskCanvas, onProgress) {
     const ort = await ensureOrt();
     const sess = await ensureSession(onProgress);
-    const S = CONFIG.size;
     const W = srcCanvas.width, H = srcCanvas.height;
+    const mult = CONFIG.multiple, maxSide = CONFIG.maxSide;
 
-    // 1) 用 letterbox 把原图铺进 SxS（居中，短边留边）
-    const scale = Math.min(S / W, S / H);
-    const dw = Math.round(W * scale), dh = Math.round(H * scale);
-    const ox = ((S - dw) / 2) | 0, oy = ((S - dh) / 2) | 0;
+    // 处理尺寸：等比缩放到 <=maxSide，再各自向下取整到 mult 的倍数
+    let scale = Math.min(1, maxSide / Math.max(W, H));
+    let pw = Math.max(mult, Math.round(W * scale / mult) * mult);
+    let ph = Math.max(mult, Math.round(H * scale / mult) * mult);
 
+    // 源图缩放到 pw x ph
     const tmp = document.createElement("canvas");
-    tmp.width = S; tmp.height = S;
+    tmp.width = pw; tmp.height = ph;
     const tctx = tmp.getContext("2d", { willReadFrequently: true });
-    tctx.fillStyle = "#000"; tctx.fillRect(0, 0, S, S);
-    tctx.drawImage(srcCanvas, 0, 0, W, H, ox, oy, dw, dh);
-    const imgData = tctx.getImageData(0, 0, S, S).data;
+    tctx.drawImage(srcCanvas, 0, 0, W, H, 0, 0, pw, ph);
+    const imgData = tctx.getImageData(0, 0, pw, ph).data;
 
-    // 掩膜同样铺进 SxS
+    // 掩膜缩放到 pw x ph（关闭平滑，保持硬边）
     const mtmp = document.createElement("canvas");
-    mtmp.width = S; mtmp.height = S;
+    mtmp.width = pw; mtmp.height = ph;
     const mctx = mtmp.getContext("2d", { willReadFrequently: true });
-    mctx.fillStyle = "#000"; mctx.fillRect(0, 0, S, S);
-    mctx.drawImage(maskCanvas, 0, 0, W, H, ox, oy, dw, dh);
-    const mData = mctx.getImageData(0, 0, S, S).data;
+    mctx.imageSmoothingEnabled = false;
+    mctx.drawImage(maskCanvas, 0, 0, W, H, 0, 0, pw, ph);
+    const mData = mctx.getImageData(0, 0, pw, ph).data;
 
-    // 2) 组装输入张量
-    // image: float32 [1,3,S,S], RGB, 0..1, planar (NCHW)
-    const imgArr = new Float32Array(3 * S * S);
-    const maskArr = new Float32Array(1 * S * S);
-    const plane = S * S;
+    // 组装 uint8 NCHW 张量
+    const plane = pw * ph;
+    const imgArr = new Uint8Array(3 * plane);
+    const maskArr = new Uint8Array(plane);
+    const hole = CONFIG.maskHoleValue & 255, keep = CONFIG.maskKeepValue & 255;
     for (let i = 0; i < plane; i++) {
-      imgArr[i] = imgData[i * 4] / 255;                 // R
-      imgArr[plane + i] = imgData[i * 4 + 1] / 255;     // G
-      imgArr[2 * plane + i] = imgData[i * 4 + 2] / 255; // B
-      // 掩膜：红色通道（涂抹用 #ff3b3b）或 alpha 高 => 1（待修复）
-      const isMask = (mData[i * 4] > 80 && mData[i * 4 + 3] > 40) ? 1 : 0;
-      maskArr[i] = isMask;
+      imgArr[i] = imgData[i * 4];               // R
+      imgArr[plane + i] = imgData[i * 4 + 1];   // G
+      imgArr[2 * plane + i] = imgData[i * 4 + 2]; // B
+      const isHole = (mData[i * 4] > 80 && mData[i * 4 + 3] > 40);
+      maskArr[i] = isHole ? hole : keep;
     }
 
     const feeds = {};
-    feeds[CONFIG.inputImageName] = new ort.Tensor("float32", imgArr, [1, 3, S, S]);
-    feeds[CONFIG.inputMaskName] = new ort.Tensor("float32", maskArr, [1, 1, S, S]);
+    feeds[CONFIG.inputImageName] = new ort.Tensor("uint8", imgArr, [1, 3, ph, pw]);
+    feeds[CONFIG.inputMaskName] = new ort.Tensor("uint8", maskArr, [1, 1, ph, pw]);
 
-    // 3) 推理
     const results = await sess.run(feeds);
     const outName = sess.outputNames && sess.outputNames.length ? sess.outputNames[0]
       : Object.keys(results)[0];
-    const out = results[outName];
-    const od = out.data;
-    // 输出形状 [1,3,S,S]，值域 0..255（Carve 版）或 0..1
-    const div = CONFIG.outputRange255 ? 1 : 255;
+    const od = results[outName].data; // uint8 [1,3,ph,pw]
 
-    // 4) 把 512 结果画回一个临时 canvas，再只将掩膜区域缩放回原图
-    const resCanvas = document.createElement("canvas");
-    resCanvas.width = S; resCanvas.height = S;
-    const rctx = resCanvas.getContext("2d");
-    const resImg = rctx.createImageData(S, S);
-    const mul = CONFIG.outputRange255 ? 1 : 255; // 输出 0..1 时乘 255
+    // 结果写进处理尺寸的 canvas
+    const rc = document.createElement("canvas");
+    rc.width = pw; rc.height = ph;
+    const rctx = rc.getContext("2d", { willReadFrequently: true });
+    const resImg = rctx.createImageData(pw, ph);
     for (let i = 0; i < plane; i++) {
-      resImg.data[i * 4]     = clamp255(od[i] * mul);
-      resImg.data[i * 4 + 1] = clamp255(od[plane + i] * mul);
-      resImg.data[i * 4 + 2] = clamp255(od[2 * plane + i] * mul);
+      resImg.data[i * 4]     = od[i];
+      resImg.data[i * 4 + 1] = od[plane + i];
+      resImg.data[i * 4 + 2] = od[2 * plane + i];
       resImg.data[i * 4 + 3] = 255;
     }
     rctx.putImageData(resImg, 0, 0);
 
-    // 组合：以原图为底，仅在掩膜区域贴上放大的 AI 结果
-    const finalCanvas = document.createElement("canvas");
-    finalCanvas.width = W; finalCanvas.height = H;
-    const fctx = finalCanvas.getContext("2d", { willReadFrequently: true });
+    // 合成：原图打底，仅掩膜区域贴回 AI 结果（从 pw×ph 双线性采样回 W×H）
+    const fc = document.createElement("canvas");
+    fc.width = W; fc.height = H;
+    const fctx = fc.getContext("2d", { willReadFrequently: true });
     fctx.drawImage(srcCanvas, 0, 0);
-
-    // 逐像素合成：仅把掩膜命中的像素替换为 AI 结果（双线性从 512 采样回原图），
-    // 其余像素保持原始清晰度不动。
     const finalData = fctx.getImageData(0, 0, W, H);
     const fd = finalData.data;
-    const resData = rctx.getImageData(0, 0, S, S).data;
-    // 对原图每个像素，若其在掩膜内，则从 AI 结果对应位置双线性取样
+    const resData = rctx.getImageData(0, 0, pw, ph).data;
     const mfull = maskCanvas.getContext("2d", { willReadFrequently: true })
       .getImageData(0, 0, W, H).data;
+    const sxK = pw / W, syK = ph / H;
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
-        const idx = (y * W + x);
+        const idx = y * W + x;
         if (!(mfull[idx * 4] > 80 && mfull[idx * 4 + 3] > 40)) continue;
-        // 原图坐标 -> 512 坐标
-        const sx = ox + x * scale, sy = oy + y * scale;
-        const c = sampleBilinear(resData, S, S, sx, sy);
+        const c = sampleBilinear(resData, pw, ph, x * sxK, y * syK);
         fd[idx * 4] = c[0]; fd[idx * 4 + 1] = c[1]; fd[idx * 4 + 2] = c[2]; fd[idx * 4 + 3] = 255;
       }
     }
