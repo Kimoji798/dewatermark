@@ -223,8 +223,8 @@
   </div>
   <div class="drop" id="drop">
     <h2>选择要去水印的图片</h2>
-    <p>从相册选择，或拍一张照片<br>全程在手机本地处理，不会上传</p>
-    <button class="big" id="pickBtn">📷 选择图片</button>
+    <p>从相册选择一张图片<br>全程在手机本地处理，不会上传</p>
+    <button class="big" id="pickBtn">🖼 从相册选择</button>
   </div>
   <div class="mode-hint" id="modeHint" style="display:none;"><b>单指</b>涂抹水印 · <b>双指</b>缩放/移动</div>
   <div class="status" id="status">
@@ -267,7 +267,7 @@
       <li><b>两根手指</b>可以缩放、拖动图片，方便涂细节</li>
       <li>点底部"去除水印"</li>
       <li>效果不好可反复涂抹、反复去除，或调高"强度"</li>
-      <li>满意后点右上角"保存"导出到相册</li>
+      <li>满意后点右上角"保存"，在弹出面板选"存储图像"即可存到相册</li>
     </ol>
     <button class="close" id="sheetClose">知道了</button>
   </div>
@@ -783,13 +783,31 @@
   };
 
   // ---------- Save ----------
+  // 手机优先用系统分享面板（内含“存储图像”可直接存到相册），
+  // 不支持时回退为下载文件。
   $("saveBtn").onclick = () => {
-    workCanvas.toBlob((blob) => {
-      const url=URL.createObjectURL(blob);
-      const a=document.createElement("a");
-      a.href=url; a.download="去水印_"+Date.now()+".png";
+    workCanvas.toBlob(async (blob) => {
+      if (!blob) return;
+      const name = "去水印_" + Date.now() + ".png";
+      const file = new File([blob], name, { type: "image/png" });
+
+      // 能分享文件就走分享（iOS/安卓可选“存储图像”存到相册）
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: "去水印结果" });
+          return;
+        } catch (err) {
+          // 用户取消分享则直接返回，不再弹下载
+          if (err && err.name === "AbortError") return;
+          // 其它错误继续回退到下载
+        }
+      }
+      // 回退：普通下载
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = name;
       document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(()=>URL.revokeObjectURL(url),2000);
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
     }, "image/png");
   };
 
