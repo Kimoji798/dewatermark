@@ -251,6 +251,10 @@
     <input type="range" id="qualityRange" min="1" max="3" value="2">
     <span class="v" id="qualityVal">标准</span>
   </div>
+  <label class="slider-row" style="gap:8px;cursor:pointer;">
+    <input type="checkbox" id="aiToggle" checked style="width:20px;height:20px;accent-color:var(--accent);flex:none;">
+    <span style="font-size:12px;color:var(--text);flex:1;">AI 智能修复（更自然，首次需联网下载模型）</span>
+  </label>
   <button class="go-btn" id="inpaintBtn" disabled>✨ 去除水印</button>
 </div>
 
@@ -270,6 +274,7 @@
 </div>
 
 <input type="file" id="fileInput" accept="image/*">
+<script src="./ai-inpaint.js"></script>
 <script>
 "use strict";
 (function () {
@@ -671,20 +676,53 @@
     undoStack.push(workCtx.getImageData(0,0,workCanvas.width,workCanvas.height));
     $("undoBtn").disabled=false;
   }
-  function doInpaint() {
+  function runClassic(quality) {
+    pushUndo();
+    runInpaint(quality);
+    maskCtx.clearRect(0,0,maskCanvas.width,maskCanvas.height);
+    render();
+  }
+
+  async function doInpaint() {
     if (!hasImage) return;
     if (maskIsEmpty()) { alert("请先用手指涂抹要去除的水印区域。"); return; }
     const quality=parseInt($("qualityRange").value,10);
-    showStatus("正在去除水印…");
-    setTimeout(() => {
-      try {
-        pushUndo();
-        runInpaint(quality);
-        maskCtx.clearRect(0,0,maskCanvas.width,maskCanvas.height);
-        render();
-      } catch(err){ console.error(err); alert("处理出错："+err.message); }
+    const useAI = $("aiToggle") && $("aiToggle").checked && typeof AIInpaint !== "undefined";
+
+    if (!useAI) {
+      showStatus("正在去除水印…");
+      await new Promise(r=>setTimeout(r,20));
+      try { runClassic(quality); }
+      catch(err){ console.error(err); alert("处理出错："+err.message); }
       finally { hideStatus(); }
-    }, 30);
+      return;
+    }
+
+    try {
+      showStatus("准备 AI 模型…");
+      const result = await AIInpaint.inpaint(workCanvas, maskCanvas, (p)=>{
+        if (p<1) showStatus("下载 AI 模型 "+Math.round(p*100)+"%");
+        else showStatus("AI 正在修复…");
+      });
+      pushUndo();
+      workCtx.putImageData(result,0,0);
+      maskCtx.clearRect(0,0,maskCanvas.width,maskCanvas.height);
+      render();
+      hideStatus();
+    } catch(err) {
+      console.error("AI 失败，回退：", err);
+      showStatus("AI 不可用，改用快速修复…");
+      await new Promise(r=>setTimeout(r,20));
+      try { runClassic(quality); }
+      catch(e2){ console.error(e2); alert("处理出错："+e2.message); }
+      finally {
+        hideStatus();
+        if (!window.__aiWarned) {
+          window.__aiWarned = true;
+          setTimeout(()=>alert("AI 模型加载失败（可能未联网或手机内存不足），已改用本地快速修复。"), 100);
+        }
+      }
+    }
   }
   // ---------- UI wiring ----------
   function setTool(t) {
