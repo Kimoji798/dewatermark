@@ -1,6 +1,6 @@
 "use strict";
 // Service worker: cache the app shell so it works fully offline.
-const CACHE = "dewatermark-v1";
+const CACHE = "dewatermark-v2";
 const ASSETS = [
   "./mobile.html",
   "./manifest.webmanifest",

@@ -638,6 +638,25 @@
       else { nnf = null; }
     }
 
+    // Final coherence pass: replace each hole pixel with the ACTUAL pixel from
+    // its single best-matching source patch. No averaging -> sharp real texture
+    // instead of a soft blur.
+    if (nnf) {
+      const half = P >> 1, mX = W - P, mY = H - P;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const i = y*W+x;
+        if (!mask[i]) continue;
+        let tlx = x - half; if (tlx < 0) tlx = 0; else if (tlx > mX) tlx = mX;
+        let tly = y - half; if (tly < 0) tly = 0; else if (tly > mY) tly = mY;
+        const tl = tly*W + tlx;
+        let sx = nnf.nx[tl] + (x - tlx), sy = nnf.ny[tl] + (y - tly);
+        if (sx < 0) sx = 0; else if (sx >= W) sx = W-1;
+        if (sy < 0) sy = 0; else if (sy >= H) sy = H-1;
+        const si = (sy*W + sx)*3;
+        base[i*3] = base[si]; base[i*3+1] = base[si+1]; base[i*3+2] = base[si+2];
+      }
+    }
+
     for (let i = 0; i < W * H; i++) {
       if (!mask[i]) continue;
       px[i*4]   = Math.max(0, Math.min(255, base[i*3]   + 0.5)) | 0;
