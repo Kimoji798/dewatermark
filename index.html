@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>图片去水印</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #0f1115; color: #e6e8ec; min-height: 100vh;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .card { text-align: center; max-width: 420px; }
+  h1 { font-size: 22px; margin-bottom: 10px; }
+  p { color: #9aa0aa; font-size: 14px; line-height: 1.7; margin-bottom: 28px; }
+  .links { display: flex; flex-direction: column; gap: 12px; }
+  a {
+    display: block; text-decoration: none; padding: 16px;
+    border-radius: 12px; font-size: 15px; font-weight: 600;
+    background: #4f8cff; color: #fff; border: 1px solid #4f8cff;
+  }
+  a.alt { background: #22262f; color: #e6e8ec; border-color: #2e333d; font-weight: 500; }
+  .small { font-size: 12px; color: #9aa0aa; margin-top: 20px; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>🧽 图片去水印</h1>
+    <p>本地处理，图片不会上传。正在为你打开合适的版本…</p>
+    <div class="links">
+      <a href="./mobile.html">📱 手机版</a>
+      <a class="alt" href="./ImageWR.html">💻 电脑版</a>
+    </div>
+    <p class="small">若没有自动跳转，请点上方按钮选择。</p>
+  </div>
+  <script>
+    // 自动根据设备跳转，用户仍可手动选择
+    var isMobile = /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(navigator.userAgent)
+      || (window.matchMedia && window.matchMedia("(max-width: 820px)").matches);
+    setTimeout(function () {
+      location.replace(isMobile ? "./mobile.html" : "./ImageWR.html");
+    }, 700);
+  </script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+name: Deploy to GitHub Pages
+
+# 每次推送到 main 分支时自动部署
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:   # 也允许在 Actions 页面手动触发
+
+# 授予部署 Pages 所需的权限
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一时间只跑一个部署
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置 Pages
+        uses: actions/configure-pages@v5
+
+      - name: 打包站点文件
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .   # 整个仓库根目录作为站点
+
+      - name: 部署到 Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

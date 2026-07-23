@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0f1115">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<title>图片去水印 · 手机版</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  :root {
+    --bg: #0f1115;
+    --panel: #1a1d24;
+    --panel-2: #262b34;
+    --border: #2e333d;
+    --text: #e6e8ec;
+    --muted: #9aa0aa;
+    --accent: #4f8cff;
+    --accent-2: #3a6fd8;
+    --safe-b: env(safe-area-inset-bottom, 0px);
+    --safe-t: env(safe-area-inset-top, 0px);
+  }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: none;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  /* ---------- Top bar ---------- */
+  .topbar {
+    padding: calc(10px + var(--safe-t)) 14px 10px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    z-index: 20;
+  }
+  .topbar .title { font-size: 15px; font-weight: 600; flex: 1; }
+  .icon-btn {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .icon-btn:disabled { opacity: .4; }
+  .icon-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  /* ---------- Stage ---------- */
+  .stage {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background:
+      linear-gradient(45deg, #16181d 25%, transparent 25%),
+      linear-gradient(-45deg, #16181d 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #16181d 75%),
+      linear-gradient(-45deg, transparent 75%, #16181d 75%);
+    background-size: 24px 24px;
+    background-position: 0 0, 0 12px, 12px -12px, -12px 0;
+    background-color: #101216;
+    touch-action: none;
+  }
+  #canvasWrap {
+    position: absolute;
+    top: 0; left: 0;
+    transform-origin: 0 0;
+    line-height: 0;
+    box-shadow: 0 6px 30px rgba(0,0,0,.5);
+    will-change: transform;
+  }
+  #view { display: block; }
+  .drop {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: var(--muted);
+    padding: 30px;
+    gap: 14px;
+  }
+  .drop h2 { font-size: 19px; color: var(--text); }
+  .drop p { font-size: 13px; line-height: 1.7; }
+  .drop .big {
+    margin-top: 8px;
+    background: var(--accent); color: #fff; border: none;
+    padding: 14px 30px; border-radius: 12px; font-size: 15px; font-weight: 600;
+    font-family: inherit;
+  }
+  /* ---------- Mode hint ---------- */
+  .mode-hint {
+    position: absolute;
+    top: 12px; left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,.7);
+    border: 1px solid var(--border);
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 12px;
+    color: var(--muted);
+    pointer-events: none;
+    z-index: 15;
+  }
+  .mode-hint b { color: var(--accent); }
+  /* ---------- Bottom toolbar ---------- */
+  .toolbar {
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    padding: 12px 14px calc(12px + var(--safe-b));
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    z-index: 20;
+  }
+  .tools-row { display: flex; gap: 8px; }
+  .tool {
+    flex: 1;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 12px;
+    padding: 11px 0;
+    font-size: 13px;
+    font-family: inherit;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    cursor: pointer;
+  }
+  .tool .ic { font-size: 18px; }
+  .tool:disabled { opacity: .4; }
+  .tool.active { border-color: var(--accent); color: var(--accent); background: #1d2635; }
+  .slider-row { display: flex; align-items: center; gap: 12px; }
+  .slider-row label { font-size: 12px; color: var(--muted); width: 56px; }
+  .slider-row input[type=range] { flex: 1; accent-color: var(--accent); height: 28px; }
+  .slider-row .v { font-size: 12px; color: var(--text); width: 44px; text-align: right; font-variant-numeric: tabular-nums; }
+  .go-btn {
+    width: 100%;
+    background: var(--accent);
+    border: none;
+    color: #fff;
+    font-weight: 700;
+    font-size: 16px;
+    padding: 15px;
+    border-radius: 14px;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .go-btn:disabled { opacity: .4; }
+  /* ---------- Status ---------- */
+  .status {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,.6);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 14px;
+    z-index: 30;
+    color: #fff;
+    font-size: 14px;
+  }
+  .status.show { display: flex; }
+  .spinner {
+    width: 34px; height: 34px;
+    border: 3px solid rgba(255,255,255,.25);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  input[type=file] { display: none; }
+  /* ---------- Sheet (help) ---------- */
+  .sheet-mask {
+    position: fixed; inset: 0; background: rgba(0,0,0,.5);
+    display: none; z-index: 40; align-items: flex-end;
+  }
+  .sheet-mask.show { display: flex; }
+  .sheet {
+    width: 100%;
+    background: var(--panel);
+    border-radius: 18px 18px 0 0;
+    padding: 20px 20px calc(24px + var(--safe-b));
+    border-top: 1px solid var(--border);
+  }
+  .sheet h3 { font-size: 16px; margin-bottom: 12px; }
+  .sheet ol { padding-left: 20px; font-size: 14px; line-height: 1.9; color: var(--text); }
+  .sheet .close { margin-top: 16px; width: 100%; background: var(--panel-2); border: 1px solid var(--border); color: var(--text); padding: 12px; border-radius: 12px; font-size: 14px; font-family: inherit; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <span class="title">🧽 图片去水印</span>
+  <button class="icon-btn" id="installBtn" style="display:none;">安装</button>
+  <button class="icon-btn" id="helpBtn">?</button>
+  <button class="icon-btn" id="openBtn">打开</button>
+  <button class="icon-btn primary" id="saveBtn" disabled>保存</button>
+</div>
+
+<div class="stage" id="stage">
+  <div id="canvasWrap" style="display:none;">
+    <canvas id="view"></canvas>
+  </div>
+  <div class="drop" id="drop">
+    <h2>选择要去水印的图片</h2>
+    <p>从相册选择，或拍一张照片<br>全程在手机本地处理，不会上传</p>
+    <button class="big" id="pickBtn">📷 选择图片</button>
+  </div>
+  <div class="mode-hint" id="modeHint" style="display:none;"><b>单指</b>涂抹水印 · <b>双指</b>缩放/移动</div>
+  <div class="status" id="status">
+    <div class="spinner"></div>
+    <div id="statusText">正在去除水印…</div>
+  </div>
+</div>
+
+<div class="toolbar">
+  <div class="tools-row">
+    <button class="tool active" id="brushBtn" disabled><span class="ic">🖌</span>画笔</button>
+    <button class="tool" id="eraserBtn" disabled><span class="ic">🧹</span>擦除</button>
+    <button class="tool" id="undoBtn" disabled><span class="ic">↶</span>撤销</button>
+    <button class="tool" id="clearBtn" disabled><span class="ic">✕</span>清涂</button>
+    <button class="tool" id="resetBtn" disabled><span class="ic">⟲</span>还原</button>
+  </div>
+  <div class="slider-row">
+    <label>笔刷</label>
+    <input type="range" id="sizeRange" min="6" max="140" value="40">
+    <span class="v" id="sizeVal">40px</span>
+  </div>
+  <div class="slider-row">
+    <label>强度</label>
+    <input type="range" id="qualityRange" min="1" max="3" value="2">
+    <span class="v" id="qualityVal">标准</span>
+  </div>
+  <button class="go-btn" id="inpaintBtn" disabled>✨ 去除水印</button>
+</div>
+
+<div class="sheet-mask" id="sheetMask">
+  <div class="sheet">
+    <h3>使用方法</h3>
+    <ol>
+      <li>点右上角"打开"，选择带水印的图片</li>
+      <li>用<b>单指</b>在水印上涂抹（涂成红色）</li>
+      <li><b>两根手指</b>可以缩放、拖动图片，方便涂细节</li>
+      <li>点底部"去除水印"</li>
+      <li>效果不好可反复涂抹、反复去除，或调高"强度"</li>
+      <li>满意后点右上角"保存"导出到相册</li>
+    </ol>
+    <button class="close" id="sheetClose">知道了</button>
+  </div>
+</div>
+
+<input type="file" id="fileInput" accept="image/*">
+<script>
+"use strict";
+(function () {
+  // ---------- Canvases ----------
+  const workCanvas = document.createElement("canvas");
+  const workCtx = workCanvas.getContext("2d", { willReadFrequently: true });
+  const maskCanvas = document.createElement("canvas");
+  const maskCtx = maskCanvas.getContext("2d", { willReadFrequently: true });
+  const view = document.getElementById("view");
+  const viewCtx = view.getContext("2d");
+
+  const $ = (id) => document.getElementById(id);
+  const stage = $("stage"), wrap = $("canvasWrap"), drop = $("drop");
+  const status = $("status"), statusText = $("statusText"), modeHint = $("modeHint");
+
+  // ---------- State ----------
+  let hasImage = false;
+  let tool = "brush";
+  let brushSize = 40;      // image px
+  const MAX_SIDE = 2400;   // cap working resolution for phone performance
+
+  // view transform: image px -> screen px inside stage
+  let tx = 0, ty = 0, zoom = 1, minZoom = 1;
+
+  const undoStack = [];
+  const MAX_UNDO = 8;
+
+  const controls = ["saveBtn","brushBtn","eraserBtn","undoBtn","clearBtn","resetBtn","inpaintBtn"];
+  const setEnabled = (on) => controls.forEach(id => $(id).disabled = !on);
+
+  function showStatus(t) { statusText.textContent = t; status.classList.add("show"); }
+  function hideStatus() { status.classList.remove("show"); }
+
+  // ---------- Load ----------
+  function loadImage(src) {
+    const img = new Image();
+    img.onload = () => { setupImage(img); URL.revokeObjectURL(src); };
+    img.onerror = () => alert("无法加载该图片");
+    img.src = src;
+  }
+  function setupImage(img) {
+    let w = img.naturalWidth, h = img.naturalHeight;
+    const longest = Math.max(w, h);
+    if (longest > MAX_SIDE) { const k = MAX_SIDE / longest; w = Math.round(w*k); h = Math.round(h*k); }
+    workCanvas.width = maskCanvas.width = view.width = w;
+    workCanvas.height = maskCanvas.height = view.height = h;
+    workCtx.clearRect(0,0,w,h);
+    workCtx.drawImage(img, 0, 0, w, h);
+    maskCtx.clearRect(0,0,w,h);
+    undoStack.length = 0;
+    hasImage = true;
+    drop.style.display = "none";
+    wrap.style.display = "block";
+    modeHint.style.display = "block";
+    setEnabled(true);
+    $("undoBtn").disabled = true;
+    fitView();
+    render();
+    setTimeout(() => { modeHint.style.transition = "opacity .5s"; modeHint.style.opacity = "0"; }, 3500);
+  }
+
+  function fitView() {
+    const sw = stage.clientWidth, sh = stage.clientHeight;
+    minZoom = Math.min(sw / workCanvas.width, sh / workCanvas.height);
+    zoom = minZoom;
+    tx = (sw - workCanvas.width * zoom) / 2;
+    ty = (sh - workCanvas.height * zoom) / 2;
+    applyTransform();
+  }
+  function applyTransform() {
+    wrap.style.transform = `translate(${tx}px, ${ty}px) scale(${zoom})`;
+  }
+  function render() {
+    viewCtx.clearRect(0,0,view.width,view.height);
+    viewCtx.drawImage(workCanvas,0,0);
+    viewCtx.globalAlpha = 0.55;
+    viewCtx.drawImage(maskCanvas,0,0);
+    viewCtx.globalAlpha = 1;
+  }
+  // ---------- Screen -> image coords ----------
+  function toImage(clientX, clientY) {
+    const r = stage.getBoundingClientRect();
+    const sx = clientX - r.left, sy = clientY - r.top;
+    return { x: (sx - tx) / zoom, y: (sy - ty) / zoom };
+  }
+
+  // ---------- Mask painting ----------
+  let lastPt = null;
+  function stamp(x, y) {
+    maskCtx.beginPath();
+    if (tool === "brush") {
+      maskCtx.globalCompositeOperation = "source-over";
+      maskCtx.fillStyle = "#ff3b3b";
+    } else {
+      maskCtx.globalCompositeOperation = "destination-out";
+    }
+    maskCtx.arc(x, y, brushSize/2, 0, Math.PI*2);
+    maskCtx.fill();
+    maskCtx.globalCompositeOperation = "source-over";
+  }
+  function strokeTo(x, y) {
+    if (!lastPt) { stamp(x,y); lastPt = {x,y}; return; }
+    const dx = x-lastPt.x, dy = y-lastPt.y, dist = Math.hypot(dx,dy);
+    const step = Math.max(1, brushSize/4), n = Math.ceil(dist/step);
+    for (let i=1;i<=n;i++) stamp(lastPt.x+dx*i/n, lastPt.y+dy*i/n);
+    lastPt = {x,y};
+  }
+
+  // ---------- Gesture engine ----------
+  const pointers = new Map();     // id -> {x,y}
+  let gesture = "none";           // "none" | "draw" | "pinch"
+  let pinchStart = null;
+
+  stage.addEventListener("pointerdown", (e) => {
+    if (!hasImage) return;
+    stage.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (pointers.size === 1) {
+      gesture = "draw";
+      lastPt = null;
+      const p = toImage(e.clientX, e.clientY);
+      strokeTo(p.x, p.y);
+      render();
+    } else if (pointers.size === 2) {
+      gesture = "pinch";
+      startPinch();
+    }
+  });
+
+  stage.addEventListener("pointermove", (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (gesture === "draw" && pointers.size === 1) {
+      const p = toImage(e.clientX, e.clientY);
+      strokeTo(p.x, p.y);
+      render();
+    } else if (gesture === "pinch" && pointers.size >= 2) {
+      updatePinch();
+    }
+  });
+
+  function endPointer(e) {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.delete(e.pointerId);
+    lastPt = null;
+    if (pointers.size === 0) gesture = "none";
+    else if (pointers.size === 1) { gesture = "none"; } // don't resume drawing after pinch
+  }
+  stage.addEventListener("pointerup", endPointer);
+  stage.addEventListener("pointercancel", endPointer);
+
+  function twoPoints() {
+    const pts = [...pointers.values()];
+    return [pts[0], pts[1]];
+  }
+  function startPinch() {
+    const [a,b] = twoPoints();
+    const cx = (a.x+b.x)/2, cy = (a.y+b.y)/2;
+    pinchStart = {
+      dist: Math.hypot(a.x-b.x, a.y-b.y),
+      cx, cy, zoom, tx, ty,
+    };
+  }
+  function updatePinch() {
+    const [a,b] = twoPoints();
+    if (!pinchStart) { startPinch(); return; }
+    const dist = Math.hypot(a.x-b.x, a.y-b.y);
+    const cx = (a.x+b.x)/2, cy = (a.y+b.y)/2;
+    const r = stage.getBoundingClientRect();
+    let newZoom = pinchStart.zoom * (dist / pinchStart.dist);
+    newZoom = Math.max(minZoom * 0.9, Math.min(minZoom * 12, newZoom));
+    // keep the pinch center anchored, plus allow panning with the center movement
+    const anchorX = pinchStart.cx - r.left, anchorY = pinchStart.cy - r.top;
+    const imgX = (anchorX - pinchStart.tx) / pinchStart.zoom;
+    const imgY = (anchorY - pinchStart.ty) / pinchStart.zoom;
+    const curCx = cx - r.left, curCy = cy - r.top;
+    tx = curCx - imgX * newZoom;
+    ty = curCy - imgY * newZoom;
+    zoom = newZoom;
+    applyTransform();
+  }
+  // ================= Inpainting (multi-scale diffusion) =================
+  function buildMask() {
+    const W = workCanvas.width, H = workCanvas.height;
+    const md = maskCtx.getImageData(0,0,W,H).data;
+    const m = new Uint8Array(W*H);
+    for (let i=0,p=3;i<m.length;i++,p+=4) m[i] = md[p] > 10 ? 1 : 0;
+    return m;
+  }
+  function maskIsEmpty() {
+    const d = maskCtx.getImageData(0,0,maskCanvas.width,maskCanvas.height).data;
+    for (let i=3;i<d.length;i+=4) if (d[i]>10) return false;
+    return true;
+  }
+  function downscale(src, mask, W, H) {
+    const W2 = Math.max(1,W>>1), H2 = Math.max(1,H>>1);
+    const d = new Float32Array(W2*H2*3), dm = new Uint8Array(W2*H2);
+    for (let y=0;y<H2;y++) for (let x=0;x<W2;x++) {
+      let r=0,g=0,b=0,cnt=0,holes=0,total=0;
+      for (let dy=0;dy<2;dy++) for (let dx=0;dx<2;dx++) {
+        const sx=Math.min(W-1,x*2+dx), sy=Math.min(H-1,y*2+dy), si=sy*W+sx;
+        total++;
+        if (mask[si]) { holes++; continue; }
+        r+=src[si*3]; g+=src[si*3+1]; b+=src[si*3+2]; cnt++;
+      }
+      const di=y*W2+x;
+      if (cnt>0){ d[di*3]=r/cnt; d[di*3+1]=g/cnt; d[di*3+2]=b/cnt; }
+      dm[di]=(holes===total)?1:0;
+    }
+    return { data:d, mask:dm, W:W2, H:H2 };
+  }
+  function upscaleInto(coarse, cW, cH, dst, mask, W, H) {
+    for (let y=0;y<H;y++) {
+      const fy=(y/H)*cH-0.5; let y0=Math.floor(fy); const ty=fy-y0; let y1=y0+1;
+      y0=Math.max(0,Math.min(cH-1,y0)); y1=Math.max(0,Math.min(cH-1,y1));
+      for (let x=0;x<W;x++) {
+        const di=y*W+x; if (!mask[di]) continue;
+        const fx=(x/W)*cW-0.5; let x0=Math.floor(fx); const tx=fx-x0; let x1=x0+1;
+        x0=Math.max(0,Math.min(cW-1,x0)); x1=Math.max(0,Math.min(cW-1,x1));
+        for (let c=0;c<3;c++) {
+          const a=coarse[(y0*cW+x0)*3+c], b=coarse[(y0*cW+x1)*3+c];
+          const cc=coarse[(y1*cW+x0)*3+c], dd=coarse[(y1*cW+x1)*3+c];
+          const top=a+(b-a)*tx, bot=cc+(dd-cc)*tx;
+          dst[di*3+c]=top+(bot-top)*ty;
+        }
+      }
+    }
+  }
+  function diffuse(data, mask, W, H, iters) {
+    let buf=data, next=new Float32Array(buf.length);
+    for (let it=0;it<iters;it++) {
+      for (let y=0;y<H;y++) for (let x=0;x<W;x++) {
+        const i=y*W+x;
+        if (!mask[i]) { next[i*3]=buf[i*3]; next[i*3+1]=buf[i*3+1]; next[i*3+2]=buf[i*3+2]; continue; }
+        const xm=x>0?x-1:x, xp=x<W-1?x+1:x, ym=y>0?y-1:y, yp=y<H-1?y+1:y;
+        for (let c=0;c<3;c++)
+          next[i*3+c]=0.25*(buf[(y*W+xm)*3+c]+buf[(y*W+xp)*3+c]+buf[(ym*W+x)*3+c]+buf[(yp*W+x)*3+c]);
+      }
+      const t=buf; buf=next; next=t;
+    }
+    return buf;
+  }
+  function runInpaint(quality) {
+    const W=workCanvas.width, H=workCanvas.height;
+    const img=workCtx.getImageData(0,0,W,H), px=img.data;
+    const mask=buildMask();
+    const base=new Float32Array(W*H*3);
+    for (let i=0;i<W*H;i++){ base[i*3]=px[i*4]; base[i*3+1]=px[i*4+1]; base[i*3+2]=px[i*4+2]; }
+    const minSide=24;
+    const levels=[{data:base,mask,W,H}];
+    while (levels[levels.length-1].W>minSide && levels[levels.length-1].H>minSide) {
+      const top=levels[levels.length-1];
+      levels.push(downscale(top.data, top.mask, top.W, top.H));
+    }
+    const baseIters=[0,24,40,64][quality]||40;
+    let solved=null, cW=0, cH=0;
+    for (let l=levels.length-1;l>=0;l--) {
+      const lv=levels[l];
+      if (solved) upscaleInto(solved, cW, cH, lv.data, lv.mask, lv.W, lv.H);
+      const iters=baseIters+(levels.length-1-l)*(10*quality);
+      solved=diffuse(lv.data, lv.mask, lv.W, lv.H, iters); cW=lv.W; cH=lv.H;
+    }
+    for (let i=0;i<W*H;i++) {
+      if (!mask[i]) continue;
+      px[i*4]  =Math.max(0,Math.min(255,solved[i*3]  +0.5))|0;
+      px[i*4+1]=Math.max(0,Math.min(255,solved[i*3+1]+0.5))|0;
+      px[i*4+2]=Math.max(0,Math.min(255,solved[i*3+2]+0.5))|0;
+      px[i*4+3]=255;
+    }
+    workCtx.putImageData(img,0,0);
+  }
+  function pushUndo() {
+    if (undoStack.length>=MAX_UNDO) undoStack.shift();
+    undoStack.push(workCtx.getImageData(0,0,workCanvas.width,workCanvas.height));
+    $("undoBtn").disabled=false;
+  }
+  function doInpaint() {
+    if (!hasImage) return;
+    if (maskIsEmpty()) { alert("请先用手指涂抹要去除的水印区域。"); return; }
+    const quality=parseInt($("qualityRange").value,10);
+    showStatus("正在去除水印…");
+    setTimeout(() => {
+      try {
+        pushUndo();
+        runInpaint(quality);
+        maskCtx.clearRect(0,0,maskCanvas.width,maskCanvas.height);
+        render();
+      } catch(err){ console.error(err); alert("处理出错："+err.message); }
+      finally { hideStatus(); }
+    }, 30);
+  }
+  // ---------- UI wiring ----------
+  function setTool(t) {
+    tool = t;
+    $("brushBtn").classList.toggle("active", t==="brush");
+    $("eraserBtn").classList.toggle("active", t==="eraser");
+  }
+  $("brushBtn").onclick = () => setTool("brush");
+  $("eraserBtn").onclick = () => setTool("eraser");
+
+  $("sizeRange").oninput = (e) => { brushSize=parseInt(e.target.value,10); $("sizeVal").textContent=brushSize+"px"; };
+  const qL={1:"快速",2:"标准",3:"精细"};
+  $("qualityRange").oninput = (e) => { $("qualityVal").textContent=qL[e.target.value]||"标准"; };
+
+  $("clearBtn").onclick = () => { maskCtx.clearRect(0,0,maskCanvas.width,maskCanvas.height); render(); };
+  $("inpaintBtn").onclick = doInpaint;
+  $("undoBtn").onclick = () => {
+    if (!undoStack.length) return;
+    workCtx.putImageData(undoStack.pop(),0,0);
+    if (!undoStack.length) $("undoBtn").disabled=true;
+    render();
+  };
+  $("resetBtn").onclick = () => {
+    if (!undoStack.length) return;
+    if (!confirm("还原到最初的图片？所有去水印操作会被撤销。")) return;
+    workCtx.putImageData(undoStack[0],0,0);
+    undoStack.length=0; $("undoBtn").disabled=true;
+    maskCtx.clearRect(0,0,maskCanvas.width,maskCanvas.height);
+    render();
+  };
+
+  // ---------- Save ----------
+  $("saveBtn").onclick = () => {
+    workCanvas.toBlob((blob) => {
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement("a");
+      a.href=url; a.download="去水印_"+Date.now()+".png";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),2000);
+    }, "image/png");
+  };
+
+  // ---------- File input ----------
+  const fileInput=$("fileInput");
+  const pick=()=>fileInput.click();
+  $("openBtn").onclick=pick; $("pickBtn").onclick=pick;
+  fileInput.onchange=(e)=>{ const f=e.target.files[0]; if (f) loadImage(URL.createObjectURL(f)); fileInput.value=""; };
+
+  window.addEventListener("paste",(e)=>{
+    const items=e.clipboardData&&e.clipboardData.items; if(!items) return;
+    for (const it of items) if (it.type.startsWith("image/")) { loadImage(URL.createObjectURL(it.getAsFile())); break; }
+  });
+
+  // ---------- Help sheet ----------
+  const sheetMask=$("sheetMask");
+  $("helpBtn").onclick=()=>sheetMask.classList.add("show");
+  $("sheetClose").onclick=()=>sheetMask.classList.remove("show");
+  sheetMask.addEventListener("click",(e)=>{ if (e.target===sheetMask) sheetMask.classList.remove("show"); });
+
+  // ---------- Prevent page scroll/zoom ----------
+  document.addEventListener("gesturestart",(e)=>e.preventDefault());
+  document.addEventListener("touchmove",(e)=>{ if (e.touches.length>1) e.preventDefault(); }, { passive:false });
+  window.addEventListener("resize", () => { if (hasImage) { const z=zoom; fitView(); if (z>minZoom) {} } });
+
+  // ---------- PWA: install prompt ----------
+  let deferredPrompt = null;
+  const installBtn = $("installBtn");
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    installBtn.style.display = "inline-block";
+  });
+  installBtn.onclick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    installBtn.style.display = "none";
+  };
+  window.addEventListener("appinstalled", () => { installBtn.style.display = "none"; });
+})();
+
+// ---------- PWA: register service worker ----------
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch((err) => console.warn("SW 注册失败:", err));
+  });
+}
+</script>
+
+
+
+
+
+</body>
+</html>
+
