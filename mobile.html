@@ -699,7 +699,9 @@
     }
 
     try {
-      showStatus("准备 AI 模型…");
+      showStatus("AI 正在修复…");
+      // 先让浏览器重绘一帧，确保提示能显示（推理同步计算会阻塞主线程）
+      await new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
       const result = await AIInpaint.inpaint(workCanvas, maskCanvas, (p)=>{
         if (p<1) showStatus("下载 AI 模型 "+Math.round(p*100)+"%");
         else showStatus("AI 正在修复…");

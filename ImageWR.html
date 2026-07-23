@@ -636,7 +636,9 @@
 
     // AI 路径：失败则自动回退到块匹配
     try {
-      showStatus("准备 AI 模型…");
+      showStatus("AI 正在修复…");
+      // 先让浏览器重绘一帧，确保提示能显示出来（推理是同步计算会阻塞主线程）
+      await new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
       const result = await AIInpaint.inpaint(workCanvas, maskCanvas, (p) => {
         if (p < 1) showStatus("下载 AI 模型 " + Math.round(p * 100) + "%（首次较久，之后会缓存）");
         else showStatus("AI 正在修复…");
