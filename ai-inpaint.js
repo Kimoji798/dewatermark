@@ -64,8 +64,13 @@ const AIInpaint = (function () {
       }
       if (typeof self.ort === "undefined") throw new Error("onnxruntime 未能加载");
       self.ort.env.wasm.wasmPaths = CONFIG.wasmPaths;
-      // 线程数：手机少一点，避免内存压力
-      self.ort.env.wasm.numThreads = isMobile() ? 1 : (navigator.hardwareConcurrency || 4);
+      // 关键：GitHub Pages 等静态托管无法设置 COOP/COEP 响应头，
+      // 因此 SharedArrayBuffer 不可用，多线程 wasm 会初始化失败。
+      // 只有页面确实处于跨域隔离状态时才启用多线程，否则强制单线程。
+      const canThread = (typeof self.crossOriginIsolated !== "undefined") && self.crossOriginIsolated
+        && (typeof self.SharedArrayBuffer !== "undefined");
+      self.ort.env.wasm.numThreads = canThread ? Math.min(4, navigator.hardwareConcurrency || 2) : 1;
+      self.ort.env.wasm.simd = true;
       return self.ort;
     })().catch((e) => { ortReady = null; throw e; });
     return ortReady;

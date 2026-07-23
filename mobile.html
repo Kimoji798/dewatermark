@@ -719,7 +719,7 @@
         hideStatus();
         if (!window.__aiWarned) {
           window.__aiWarned = true;
-          setTimeout(()=>alert("AI 模型加载失败（可能未联网或手机内存不足），已改用本地快速修复。"), 100);
+          setTimeout(()=>alert("AI 模型加载失败，已改用本地快速修复。\n\n具体错误（反馈时请发这段）：\n" + (err && err.message ? err.message : err)), 100);
         }
       }
     }
