@@ -810,7 +810,29 @@
 // ---------- PWA: register service worker ----------
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js").catch((err) => console.warn("SW 注册失败:", err));
+    navigator.serviceWorker.register("./sw.js").then((reg) => {
+      // 每次打开主动检查更新
+      reg.update();
+      // 发现新版本装好后，让它立即接管
+      reg.addEventListener("updatefound", () => {
+        const nw = reg.installing;
+        if (!nw) return;
+        nw.addEventListener("statechange", () => {
+          if (nw.state === "installed" && navigator.serviceWorker.controller) {
+            // 新版本已就绪，下次导航即为新版
+            console.log("发现新版本，已在后台更新");
+          }
+        });
+      });
+    }).catch((err) => console.warn("SW 注册失败:", err));
+
+    // 新 SW 接管后自动刷新一次，确保看到最新页面
+    let refreshed = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (refreshed) return;
+      refreshed = true;
+      window.location.reload();
+    });
   });
 }
 </script>
