@@ -172,30 +172,49 @@ const AIInpaint = (function () {
   //   4. 只把“掩膜命中的区域”缩放回原图对应位置贴上，
   //      非掩膜区域保持原始像素 → 图片其它部分 100% 清晰无损
   // ---------------------------------------------------------------
-  async function inpaint(srcCanvas, maskCanvas, onProgress) {
+  async function inpaint(srcCanvas, maskCanvas, onProgress, opts) {
     const ort = await ensureOrt();
     const sess = await ensureSession(onProgress);
     const W = srcCanvas.width, H = srcCanvas.height;
-    const mult = CONFIG.multiple, maxSide = CONFIG.maxSide;
+    const mult = CONFIG.multiple;
+    // 清晰度：maxSide 越大越清晰；传 Infinity 表示用原图分辨率（完全不模糊）
+    const maxSide = (opts && opts.maxSide) ? opts.maxSide : CONFIG.maxSide;
 
-    // 处理尺寸：等比缩放到 <=maxSide，再各自向下取整到 mult 的倍数
-    let scale = Math.min(1, maxSide / Math.max(W, H));
-    let pw = Math.max(mult, Math.round(W * scale / mult) * mult);
-    let ph = Math.max(mult, Math.round(H * scale / mult) * mult);
+    // 若原图长边不超过所选上限：用“补边”到 mult 倍数（1:1 不缩放）→ 掩膜像素零重采样、零模糊。
+    // 否则等比缩小到上限内（速度/内存取舍，此时掩膜区域回贴会有一定模糊）。
+    const longest = Math.max(W, H);
+    const noScale = longest <= maxSide;
+    let scale, pw, ph;
+    if (noScale) {
+      scale = 1;
+      pw = Math.max(mult, Math.ceil(W / mult) * mult);   // 补边到 mult 倍数
+      ph = Math.max(mult, Math.ceil(H / mult) * mult);
+    } else {
+      scale = maxSide / longest;
+      pw = Math.max(mult, Math.round(W * scale / mult) * mult);
+      ph = Math.max(mult, Math.round(H * scale / mult) * mult);
+    }
 
-    // 源图缩放到 pw x ph
+    // 源图画进 pw x ph（1:1 时画在左上角，多出的边用边缘拉伸填充，避免黑边影响边界水印）
     const tmp = document.createElement("canvas");
     tmp.width = pw; tmp.height = ph;
     const tctx = tmp.getContext("2d", { willReadFrequently: true });
-    tctx.drawImage(srcCanvas, 0, 0, W, H, 0, 0, pw, ph);
+    if (noScale) {
+      tctx.drawImage(srcCanvas, 0, 0);
+      if (pw > W) tctx.drawImage(srcCanvas, W - 1, 0, 1, H, W, 0, pw - W, H); // 右侧补边
+      if (ph > H) tctx.drawImage(tmp, 0, H - 1, pw, 1, 0, H, pw, ph - H);     // 底部补边
+    } else {
+      tctx.drawImage(srcCanvas, 0, 0, W, H, 0, 0, pw, ph);
+    }
     const imgData = tctx.getImageData(0, 0, pw, ph).data;
 
-    // 掩膜缩放到 pw x ph（关闭平滑，保持硬边）
+    // 掩膜画进 pw x ph（关闭平滑，保持硬边）
     const mtmp = document.createElement("canvas");
     mtmp.width = pw; mtmp.height = ph;
     const mctx = mtmp.getContext("2d", { willReadFrequently: true });
     mctx.imageSmoothingEnabled = false;
-    mctx.drawImage(maskCanvas, 0, 0, W, H, 0, 0, pw, ph);
+    if (noScale) mctx.drawImage(maskCanvas, 0, 0);
+    else mctx.drawImage(maskCanvas, 0, 0, W, H, 0, 0, pw, ph);
     const mData = mctx.getImageData(0, 0, pw, ph).data;
 
     // 组装 uint8 NCHW 张量
@@ -248,7 +267,14 @@ const AIInpaint = (function () {
       for (let x = 0; x < W; x++) {
         const idx = y * W + x;
         if (!(mfull[idx * 4] > 80 && mfull[idx * 4 + 3] > 40)) continue;
-        const c = sampleBilinear(resData, pw, ph, x * sxK, y * syK);
+        let c;
+        if (noScale) {
+          // 1:1 直接取对应像素，零重采样 → 完全不模糊
+          const ri = (y * pw + x) * 4;
+          c = [resData[ri], resData[ri + 1], resData[ri + 2]];
+        } else {
+          c = sampleBilinear(resData, pw, ph, x * sxK, y * syK);
+        }
         fd[idx * 4] = c[0]; fd[idx * 4 + 1] = c[1]; fd[idx * 4 + 2] = c[2]; fd[idx * 4 + 3] = 255;
       }
     }

@@ -189,7 +189,10 @@
         <input type="checkbox" id="aiToggle" checked style="width:auto;accent-color:var(--accent);">
         <span>AI 智能修复（更自然，首次需联网下载模型）</span>
       </label>
-      <label class="field">修复强度 <span class="val" id="qualityVal">标准</span>
+      <label class="field">清晰度 <span class="val" id="clarityVal">高</span>
+        <input type="range" id="clarityRange" min="1" max="4" value="3">
+      </label>
+      <label class="field">修复强度（快速模式）<span class="val" id="qualityVal">标准</span>
         <input type="range" id="qualityRange" min="1" max="3" value="2">
       </label>
       <button id="inpaintBtn" class="primary" disabled>✨ 去除水印</button>
@@ -642,7 +645,7 @@
       const result = await AIInpaint.inpaint(workCanvas, maskCanvas, (p) => {
         if (p < 1) showStatus("下载 AI 模型 " + Math.round(p * 100) + "%（首次较久，之后会缓存）");
         else showStatus("AI 正在修复…");
-      });
+      }, { maxSide: currentMaxSide() });
       pushUndo();
       workCtx.putImageData(result, 0, 0);
       maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
@@ -682,6 +685,16 @@
   $("qualityRange").oninput = (e) => {
     $("qualityVal").textContent = qLabels[e.target.value] || "标准";
   };
+  // 清晰度档位 -> AI 处理分辨率上限（越大越清晰、越慢/越吃内存；最高档=原图分辨率，完全不模糊）
+  const clarityLabels = { 1: "低（快）", 2: "中", 3: "高", 4: "原图（最清晰）" };
+  const clarityMaxSide = { 1: 768, 2: 1024, 3: 1536, 4: Infinity };
+  $("clarityRange").oninput = (e) => {
+    $("clarityVal").textContent = clarityLabels[e.target.value] || "高";
+  };
+  function currentMaxSide() {
+    const v = $("clarityRange") ? $("clarityRange").value : "3";
+    return clarityMaxSide[v] || 1536;
+  }
 
   $("clearMaskBtn").onclick = () => {
     maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
