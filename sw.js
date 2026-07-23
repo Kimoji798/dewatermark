@@ -1,6 +1,6 @@
 "use strict";
 // Service worker: cache the app shell so it works fully offline.
-const CACHE = "dewatermark-v8";
+const CACHE = "dewatermark-v9";
 const ASSETS = [
   "./mobile.html",
   "./ai-inpaint.js",

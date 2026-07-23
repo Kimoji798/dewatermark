@@ -385,8 +385,16 @@
 
   // ---------- Gesture engine ----------
   const pointers = new Map();     // id -> {x,y}
-  let gesture = "none";           // "none" | "draw" | "pinch"
+  let gesture = "none";           // "none" | "pending" | "draw" | "pinch"
   let pinchStart = null;
+  let pendingId = null;           // 单指落下后待确认的指针
+  let pendingTimer = null;        // 延迟落笔计时器
+  const TAP_DELAY = 90;           // ms：这段时间内若第二指到达则判为缩放，不落笔
+
+  function clearPending() {
+    if (pendingTimer) { clearTimeout(pendingTimer); pendingTimer = null; }
+    pendingId = null;
+  }
 
   stage.addEventListener("pointerdown", (e) => {
     if (!hasImage) return;
@@ -394,12 +402,23 @@
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
     if (pointers.size === 1) {
-      gesture = "draw";
+      // 先不落笔：等一小段时间确认不是双指缩放的第一根手指
+      gesture = "pending";
+      pendingId = e.pointerId;
       lastPt = null;
-      const p = toImage(e.clientX, e.clientY);
-      strokeTo(p.x, p.y);
-      render();
+      clearPending();
+      pendingTimer = setTimeout(() => {
+        pendingTimer = null;
+        // 计时结束仍是单指 → 确认是涂抹，从当前位置落笔
+        if (gesture === "pending" && pointers.size === 1) {
+          gesture = "draw";
+          const pt = pointers.get(pendingId);
+          if (pt) { const p = toImage(pt.x, pt.y); strokeTo(p.x, p.y); render(); }
+        }
+      }, TAP_DELAY);
     } else if (pointers.size === 2) {
+      // 第二指到达：取消待落笔，进入缩放
+      clearPending();
       gesture = "pinch";
       startPinch();
     }
@@ -416,14 +435,21 @@
     } else if (gesture === "pinch" && pointers.size >= 2) {
       updatePinch();
     }
+    // gesture === "pending" 时不画，只更新指针位置，等计时器确认
   });
 
   function endPointer(e) {
     if (!pointers.has(e.pointerId)) return;
     pointers.delete(e.pointerId);
     lastPt = null;
-    if (pointers.size === 0) gesture = "none";
-    else if (pointers.size === 1) { gesture = "none"; } // don't resume drawing after pinch
+    // 若在待确认期间就抬起（快速点一下）：确认是单指，补一个点
+    if (gesture === "pending" && e.pointerId === pendingId) {
+      clearPending();
+      const p = toImage(e.clientX, e.clientY);
+      stamp(p.x, p.y); render();
+    }
+    if (pointers.size === 0) { gesture = "none"; clearPending(); }
+    else if (pointers.size === 1) { gesture = "none"; } // 缩放抬起一指后不恢复涂抹
   }
   stage.addEventListener("pointerup", endPointer);
   stage.addEventListener("pointercancel", endPointer);
