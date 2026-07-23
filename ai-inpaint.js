@@ -19,11 +19,18 @@ const AIInpaint = (function () {
     ortScript: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js",
     wasmPaths: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/",
 
-    // LaMa ONNX 模型。固定 512x512 输入。
-    // 完整版（质量最高，约 200MB）——桌面默认
-    modelFull: "https://huggingface.co/Carve/LaMa-ONNX/resolve/main/lama_fp32.onnx",
-    // 手机默认也先用同一个模型地址；若后续找到稳定的量化小模型，替换这里即可。
-    modelMobile: "https://huggingface.co/Carve/LaMa-ONNX/resolve/main/lama_fp32.onnx",
+    // LaMa ONNX 模型。固定 512x512 输入。约 200MB。
+    // 多个下载源，按顺序尝试，任一成功即可（国内优先用 hf-mirror 镜像，
+    // 原站 huggingface.co 在国内常超时）。地址失效时增删这里即可。
+    modelFull: [
+      "https://hf-mirror.com/Carve/LaMa-ONNX/resolve/main/lama_fp32.onnx",
+      "https://huggingface.co/Carve/LaMa-ONNX/resolve/main/lama_fp32.onnx",
+    ],
+    // 手机同源列表（暂与桌面相同；若找到稳定量化小模型，替换这里）
+    modelMobile: [
+      "https://hf-mirror.com/Carve/LaMa-ONNX/resolve/main/lama_fp32.onnx",
+      "https://huggingface.co/Carve/LaMa-ONNX/resolve/main/lama_fp32.onnx",
+    ],
 
     // 模型固定输入尺寸
     size: 512,
@@ -78,19 +85,31 @@ const AIInpaint = (function () {
 
   // 加载模型会话（带进度回调）
   async function ensureSession(onProgress) {
-    const url = isMobile() ? CONFIG.modelMobile : CONFIG.modelFull;
-    if (session && loadedModelUrl === url) return session;
+    const urls = isMobile() ? CONFIG.modelMobile : CONFIG.modelFull;
+    const urlList = Array.isArray(urls) ? urls : [urls];
+    const key = urlList.join("|");
+    if (session && loadedModelUrl === key) return session;
 
     const ort = await ensureOrt();
 
-    // 带进度地下载模型到 ArrayBuffer（放进浏览器缓存以便离线复用）
-    const buf = await fetchModel(url, onProgress);
+    // 依次尝试各下载源，任一成功即用（带进度，结果放进缓存以便离线复用）
+    let buf = null, lastErr = null;
+    for (const u of urlList) {
+      try {
+        buf = await fetchModel(u, onProgress);
+        break;
+      } catch (e) {
+        lastErr = e;
+        console.warn("模型源失败，尝试下一个：", u, e && e.message);
+      }
+    }
+    if (!buf) throw new Error("所有模型下载源都失败了：" + (lastErr && lastErr.message ? lastErr.message : lastErr));
 
     session = await ort.InferenceSession.create(buf, {
       executionProviders: ["wasm"],
       graphOptimizationLevel: "all",
     });
-    loadedModelUrl = url;
+    loadedModelUrl = key;
     return session;
   }
 
