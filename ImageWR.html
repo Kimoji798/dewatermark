@@ -405,118 +405,183 @@
 
   // Downsample RGB float + mask by factor 2 (a cell is a hole only if ALL its
   // source pixels are holes, so known colour survives as long as possible).
-  function downscale(src, mask, W, H) {
+  // mask-aware 2x downscale of Float32 RGB + Uint8 mask (a cell is a hole only
+  // if ALL four source pixels are holes, so known colour survives as long as possible).
+  function downscale(rgb, mask, W, H) {
     const W2 = Math.max(1, W >> 1), H2 = Math.max(1, H >> 1);
-    const d = new Float32Array(W2 * H2 * 3);
-    const dm = new Uint8Array(W2 * H2);
-    for (let y = 0; y < H2; y++) {
-      for (let x = 0; x < W2; x++) {
-        let r = 0, g = 0, b = 0, cnt = 0, holes = 0, total = 0;
-        for (let dy = 0; dy < 2; dy++) {
-          for (let dx = 0; dx < 2; dx++) {
-            const sx = Math.min(W - 1, x * 2 + dx), sy = Math.min(H - 1, y * 2 + dy);
-            const si = sy * W + sx;
-            total++;
-            if (mask[si]) { holes++; continue; }
-            r += src[si * 3]; g += src[si * 3 + 1]; b += src[si * 3 + 2]; cnt++;
-          }
-        }
-        const di = y * W2 + x;
-        if (cnt > 0) { d[di*3]=r/cnt; d[di*3+1]=g/cnt; d[di*3+2]=b/cnt; }
-        dm[di] = (holes === total) ? 1 : 0;
+    const d = new Float32Array(W2 * H2 * 3), dm = new Uint8Array(W2 * H2);
+    for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) {
+      let r = 0, g = 0, b = 0, cnt = 0, holes = 0, total = 0;
+      for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) {
+        const sx = Math.min(W - 1, x*2+dx), sy = Math.min(H - 1, y*2+dy), si = sy*W+sx;
+        total++;
+        if (mask[si]) { holes++; continue; }
+        r += rgb[si*3]; g += rgb[si*3+1]; b += rgb[si*3+2]; cnt++;
       }
+      const di = y*W2+x;
+      if (cnt > 0) { d[di*3]=r/cnt; d[di*3+1]=g/cnt; d[di*3+2]=b/cnt; }
+      dm[di] = (holes === total) ? 1 : 0;
     }
-    return { data: d, mask: dm, W: W2, H: H2 };
+    return { rgb: d, mask: dm, W: W2, H: H2 };
   }
 
-  // Bilinear upscale of a coarse RGB buffer up to WxH, writing only into holes.
-  function upscaleInto(coarse, cW, cH, dst, mask, W, H) {
-    for (let y = 0; y < H; y++) {
-      const fy = (y / H) * cH - 0.5;
-      let y0 = Math.floor(fy); const ty = fy - y0;
-      let y1 = y0 + 1;
-      y0 = Math.max(0, Math.min(cH - 1, y0)); y1 = Math.max(0, Math.min(cH - 1, y1));
-      for (let x = 0; x < W; x++) {
-        const di = y * W + x;
-        if (!mask[di]) continue;
-        const fx = (x / W) * cW - 0.5;
-        let x0 = Math.floor(fx); const tx = fx - x0;
-        let x1 = x0 + 1;
-        x0 = Math.max(0, Math.min(cW - 1, x0)); x1 = Math.max(0, Math.min(cW - 1, x1));
-        for (let c = 0; c < 3; c++) {
-          const a = coarse[(y0*cW+x0)*3+c], b = coarse[(y0*cW+x1)*3+c];
-          const cc = coarse[(y1*cW+x0)*3+c], dd = coarse[(y1*cW+x1)*3+c];
-          const top = a + (b - a) * tx, bot = cc + (dd - cc) * tx;
-          dst[di*3+c] = top + (bot - top) * ty;
-        }
-      }
-    }
-  }
-
-  // Jacobi diffusion: fill holes with the average of 4-neighbours, N iterations.
-  function diffuse(data, mask, W, H, iters) {
-    let buf = data;
-    let next = new Float32Array(buf.length);
+  // Jacobi diffusion in place: fill holes with 4-neighbour average. Gives the
+  // PatchMatch a sensible colour starting point inside large holes.
+  function diffuseFill(data, mask, W, H, iters) {
+    let buf = data, next = new Float32Array(buf.length);
     for (let it = 0; it < iters; it++) {
-      for (let y = 0; y < H; y++) {
-        for (let x = 0; x < W; x++) {
-          const i = y * W + x;
-          if (!mask[i]) {
-            next[i*3]=buf[i*3]; next[i*3+1]=buf[i*3+1]; next[i*3+2]=buf[i*3+2];
-            continue;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const i = y*W+x;
+        if (!mask[i]) { next[i*3]=buf[i*3]; next[i*3+1]=buf[i*3+1]; next[i*3+2]=buf[i*3+2]; continue; }
+        const xm=x>0?x-1:x, xp=x<W-1?x+1:x, ym=y>0?y-1:y, yp=y<H-1?y+1:y;
+        for (let c=0;c<3;c++)
+          next[i*3+c]=0.25*(buf[(y*W+xm)*3+c]+buf[(y*W+xp)*3+c]+buf[(ym*W+x)*3+c]+buf[(yp*W+x)*3+c]);
+      }
+      const t=buf; buf=next; next=t;
+    }
+    if (buf !== data) data.set(buf);
+  }
+
+  // Sum of squared colour differences between two PxP patches, with early-out.
+  function patchSSD(rgb, W, tx, ty, sx, sy, P, best) {
+    let sum = 0;
+    for (let dy = 0; dy < P; dy++) {
+      let ti = ((ty+dy)*W + tx) * 3, si = ((sy+dy)*W + sx) * 3;
+      for (let dx = 0; dx < P; dx++) {
+        const dr=rgb[ti]-rgb[si], dg=rgb[ti+1]-rgb[si+1], db=rgb[ti+2]-rgb[si+2];
+        sum += dr*dr + dg*dg + db*db;
+        ti += 3; si += 3;
+      }
+      if (sum > best) return sum;
+    }
+    return sum;
+  }
+
+  // PatchMatch texture completion at one resolution. Fills holes in `rgb` by
+  // copying real PxP patches from the known region. Returns the offset field so
+  // the next finer pyramid level can be seeded from it.
+  function patchMatchLevel(rgb, mask, W, H, P, emIters, pmIters, rng, seed) {
+    const maxX = W - P, maxY = H - P;
+    if (maxX < 0 || maxY < 0) return null;
+    const IW = W + 1;
+    const integ = new Int32Array(IW * (H + 1));
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++)
+      integ[(y+1)*IW+(x+1)] = mask[y*W+x] + integ[y*IW+(x+1)] + integ[(y+1)*IW+x] - integ[y*IW+x];
+    const holesIn = (x,y) => integ[(y+P)*IW+(x+P)] - integ[y*IW+(x+P)] - integ[(y+P)*IW+x] + integ[y*IW+x];
+    const validSrc = (x,y) => x>=0 && y>=0 && x<=maxX && y<=maxY && holesIn(x,y)===0;
+
+    const srcList = [];
+    for (let y = 0; y <= maxY; y++) for (let x = 0; x <= maxX; x++) if (holesIn(x,y)===0) srcList.push(y*W+x);
+    if (srcList.length === 0) return null;
+
+    const isTarget = new Uint8Array(W*H);
+    const targets = [];
+    for (let y = 0; y <= maxY; y++) for (let x = 0; x <= maxX; x++)
+      if (holesIn(x,y) > 0) { isTarget[y*W+x]=1; targets.push(y*W+x); }
+
+    const nx = new Int32Array(W*H), ny = new Int32Array(W*H);
+    for (const t of targets) {
+      if (seed && validSrc(seed.nx[t], seed.ny[t])) { nx[t]=seed.nx[t]; ny[t]=seed.ny[t]; }
+      else { const r = srcList[(rng()*srcList.length)|0]; nx[t]=r%W; ny[t]=(r/W)|0; }
+    }
+    const dist = new Float64Array(W*H);
+    for (const t of targets) { const tx=t%W, ty=(t/W)|0; dist[t]=patchSSD(rgb,W,tx,ty,nx[t],ny[t],P,Infinity); }
+
+    const maxR = Math.max(W, H);
+    for (let em = 0; em < emIters; em++) {
+      for (let pm = 0; pm < pmIters; pm++) {
+        const rev = pm & 1;
+        for (let k = 0; k < targets.length; k++) {
+          const idx = rev ? targets.length-1-k : k;
+          const t = targets[idx], tx = t%W, ty = (t/W)|0;
+          const dirs = rev ? [[1,0],[0,1]] : [[-1,0],[0,-1]];
+          for (let di = 0; di < 2; di++) {
+            const ox = dirs[di][0], oy = dirs[di][1];
+            const npx = tx+ox, npy = ty+oy;
+            if (npx<0||npy<0||npx>maxX||npy>maxY||!isTarget[npy*W+npx]) continue;
+            const csx = nx[npy*W+npx]-ox, csy = ny[npy*W+npx]-oy;
+            if (!validSrc(csx,csy)) continue;
+            const d = patchSSD(rgb,W,tx,ty,csx,csy,P,dist[t]);
+            if (d < dist[t]) { dist[t]=d; nx[t]=csx; ny[t]=csy; }
           }
-          const xm = x>0?x-1:x, xp = x<W-1?x+1:x, ym = y>0?y-1:y, yp = y<H-1?y+1:y;
-          for (let c = 0; c < 3; c++) {
-            next[i*3+c] = 0.25 * (
-              buf[(y*W+xm)*3+c] + buf[(y*W+xp)*3+c] +
-              buf[(ym*W+x)*3+c] + buf[(yp*W+x)*3+c]);
+          let radius = maxR;
+          while (radius >= 1) {
+            const rx = nx[t] + (((rng()*2-1)*radius)|0);
+            const ry = ny[t] + (((rng()*2-1)*radius)|0);
+            if (validSrc(rx,ry)) {
+              const d = patchSSD(rgb,W,tx,ty,rx,ry,P,dist[t]);
+              if (d < dist[t]) { dist[t]=d; nx[t]=rx; ny[t]=ry; }
+            }
+            radius = (radius/2)|0;
           }
         }
       }
-      const t = buf; buf = next; next = t;
+      const accR=new Float64Array(W*H), accG=new Float64Array(W*H), accB=new Float64Array(W*H), accW=new Float64Array(W*H);
+      for (const t of targets) {
+        const tx=t%W, ty=(t/W)|0, sx=nx[t], sy=ny[t];
+        for (let dy=0;dy<P;dy++) for (let dx=0;dx<P;dx++) {
+          const pIdx=(ty+dy)*W+(tx+dx);
+          if (!mask[pIdx]) continue;
+          const sIdx=((sy+dy)*W+(sx+dx))*3;
+          accR[pIdx]+=rgb[sIdx]; accG[pIdx]+=rgb[sIdx+1]; accB[pIdx]+=rgb[sIdx+2]; accW[pIdx]++;
+        }
+      }
+      for (let i=0;i<W*H;i++){ if(!mask[i]||accW[i]===0)continue; rgb[i*3]=accR[i]/accW[i]; rgb[i*3+1]=accG[i]/accW[i]; rgb[i*3+2]=accB[i]/accW[i]; }
+      for (const t of targets){ const tx=t%W,ty=(t/W)|0; dist[t]=patchSSD(rgb,W,tx,ty,nx[t],ny[t],P,Infinity); }
     }
-    return buf;
+    return { nx, ny };
   }
+
+  // Upscale an offset field to the next finer level (offsets double).
+  function upscaleNNF(nnf, W, H, W2, H2) {
+    const nx = new Int32Array(W2*H2), ny = new Int32Array(W2*H2);
+    for (let y=0;y<H2;y++) for (let x=0;x<W2;x++) {
+      const sx = Math.min(W-1, x>>1), sy = Math.min(H-1, y>>1), si = sy*W+sx;
+      nx[y*W2+x] = x + (nnf.nx[si]*2 - (sx*2));
+      ny[y*W2+x] = y + (nnf.ny[si]*2 - (sy*2));
+    }
+    return { nx, ny };
+  }
+
+  // deterministic PRNG so results are stable and Date.now()-free
+  function makeRng(seed){ let s=(seed>>>0)||1; return ()=>{ s=(s*1664525+1013904223)>>>0; return s/4294967296; }; }
+
   function runInpaint(quality) {
     const W = workCanvas.width, H = workCanvas.height;
     const img = workCtx.getImageData(0, 0, W, H);
     const px = img.data;
     const mask = buildMask();
 
-    // RGB working buffer as floats.
     const base = new Float32Array(W * H * 3);
-    for (let i = 0; i < W * H; i++) {
-      base[i*3] = px[i*4]; base[i*3+1] = px[i*4+1]; base[i*3+2] = px[i*4+2];
+    for (let i = 0; i < W * H; i++) { base[i*3]=px[i*4]; base[i*3+1]=px[i*4+1]; base[i*3+2]=px[i*4+2]; }
+
+    const minSide = 32;
+    const levels = [{ rgb: base, mask, W, H }];
+    while (Math.min(levels[levels.length-1].W, levels[levels.length-1].H) > minSide) {
+      const t = levels[levels.length-1];
+      levels.push(downscale(t.rgb, t.mask, t.W, t.H));
     }
 
-    // Build a pyramid down to a small level.
-    const minSide = 24;
-    const levels = [{ data: base, mask, W, H }];
-    while (levels[levels.length-1].W > minSide && levels[levels.length-1].H > minSide) {
-      const top = levels[levels.length - 1];
-      levels.push(downscale(top.data, top.mask, top.W, top.H));
-    }
+    const P = 7;
+    const emIters = [0, 3, 5, 8][quality] || 5;
+    const pmIters = [0, 3, 4, 6][quality] || 4;
+    const rng = makeRng(20240607);
 
-    // Iterations scale with quality (1..3).
-    const baseIters = [0, 24, 40, 64][quality] || 40;
-
-    // Solve coarsest first, then upscale the filled holes into the next finer level.
-    let coarseSolved = null, cW = 0, cH = 0;
+    let nnf = null, pW = 0, pH = 0;
     for (let l = levels.length - 1; l >= 0; l--) {
       const lv = levels[l];
-      if (coarseSolved) upscaleInto(coarseSolved, cW, cH, lv.data, lv.mask, lv.W, lv.H);
-      // More iterations at finer levels to smooth; fewer holes remain coarse.
-      const iters = baseIters + (levels.length - 1 - l) * (10 * quality);
-      const solved = diffuse(lv.data, lv.mask, lv.W, lv.H, iters);
-      coarseSolved = solved; cW = lv.W; cH = lv.H;
+      diffuseFill(lv.rgb, lv.mask, lv.W, lv.H, 30);
+      const seed = nnf ? upscaleNNF(nnf, pW, pH, lv.W, lv.H) : null;
+      const out = patchMatchLevel(lv.rgb, lv.mask, lv.W, lv.H, P, emIters, pmIters, rng, seed);
+      if (out) { nnf = out; pW = lv.W; pH = lv.H; }
+      else { nnf = null; }
     }
 
-    // Write solved colours back into masked pixels only.
     for (let i = 0; i < W * H; i++) {
       if (!mask[i]) continue;
-      px[i*4]   = Math.max(0, Math.min(255, coarseSolved[i*3]   + 0.5)) | 0;
-      px[i*4+1] = Math.max(0, Math.min(255, coarseSolved[i*3+1] + 0.5)) | 0;
-      px[i*4+2] = Math.max(0, Math.min(255, coarseSolved[i*3+2] + 0.5)) | 0;
+      px[i*4]   = Math.max(0, Math.min(255, base[i*3]   + 0.5)) | 0;
+      px[i*4+1] = Math.max(0, Math.min(255, base[i*3+1] + 0.5)) | 0;
+      px[i*4+2] = Math.max(0, Math.min(255, base[i*3+2] + 0.5)) | 0;
       px[i*4+3] = 255;
     }
     workCtx.putImageData(img, 0, 0);
