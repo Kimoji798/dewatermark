@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0f1115">
+<link rel="manifest" href="./app.webmanifest">
+<link rel="icon" href="./icon-192.png">
 <title>图片去水印工具</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -156,6 +159,7 @@
 <header>
   <h1>🧽 图片去水印工具</h1>
   <span class="hint">本地处理，图片不会上传 · 用画笔涂抹水印，再点击"去除水印"</span>
+  <button id="installBtn" style="display:none;flex:none;padding:8px 16px;">⬇ 安装到桌面</button>
 </header>
 <div class="main">
   <aside class="sidebar">
@@ -780,7 +784,36 @@
   });
 
   window.addEventListener("resize", () => { if (hasImage) render(); });
+
+  // ---------- PWA: 安装到桌面 ----------
+  let deferredPrompt = null;
+  const installBtn = document.getElementById("installBtn");
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    if (installBtn) installBtn.style.display = "inline-block";
+  });
+  if (installBtn) installBtn.onclick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    installBtn.style.display = "none";
+  };
+  window.addEventListener("appinstalled", () => { if (installBtn) installBtn.style.display = "none"; });
 })();
+
+// ---------- PWA: 注册 service worker（离线可用）----------
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").then((reg) => reg.update())
+      .catch((err) => console.warn("SW 注册失败:", err));
+    let refreshed = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (refreshed) return; refreshed = true; window.location.reload();
+    });
+  });
+}
 </script>
 
 
