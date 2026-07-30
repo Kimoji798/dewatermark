@@ -1,7 +1,7 @@
 {
-  "name": "图片水印工具",
-  "short_name": "水印工具",
-  "description": "本地 AI 图片去水印或添加店铺名称水印，涂抹即可去除水印，全程离线处理不上传。",
+  "name": "龟龟水印",
+  "short_name": "龟龟水印",
+  "description": "本地 AI 图片去水印或添加文字水印，涂抹即可去除水印，全程离线处理不上传。",
   "start_url": "./ImageWR.html",
   "scope": "./",
   "display": "standalone",

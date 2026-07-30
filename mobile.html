@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#0f1115">
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="apple-touch-icon" href="./icon-192.png">
-<title>图片去水印 · 手机版</title>
+<title>🐢 龟龟水印 · 手机版</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
   :root {
@@ -206,11 +206,122 @@
   .sheet h3 { font-size: 16px; margin-bottom: 12px; }
   .sheet ol { padding-left: 20px; font-size: 14px; line-height: 1.9; color: var(--text); }
   .sheet .close { margin-top: 16px; width: 100%; background: var(--panel-2); border: 1px solid var(--border); color: var(--text); padding: 12px; border-radius: 12px; font-size: 14px; font-family: inherit; }
+  /* ---------- Mode tabs ---------- */
+  .mode-tabs {
+    display: flex;
+    gap: 4px;
+    background: var(--panel-2);
+    padding: 3px;
+    border-radius: 10px;
+    margin-right: 6px;
+  }
+  .mode-tab {
+    padding: 6px 10px;
+    border-radius: 7px;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .mode-tab.active { background: var(--accent); color: #fff; font-weight: 600; }
+  /* toolbar variants: only one is shown at a time */
+  .toolbar[data-mode] { display: none; }
+  .toolbar.active { display: flex; }
+  /* watermark quick-strip */
+  .wm-strip {
+    display: flex; align-items: center; gap: 8px;
+    overflow-x: auto;
+    padding: 4px 0;
+  }
+  .wm-item {
+    flex: none;
+    padding: 8px 12px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-size: 12px;
+    max-width: 140px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .wm-item.active { border-color: var(--accent); color: var(--accent); }
+  .wm-add {
+    flex: none; padding: 8px 12px; background: var(--accent);
+    color: #fff; border: none; border-radius: 10px;
+    font-size: 12px; font-weight: 600; font-family: inherit;
+  }
+  /* Color chips */
+  .chip-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
+  .color-chip {
+    aspect-ratio: 1 / 1;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 2px solid transparent;
+  }
+  .color-chip.active { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(79,140,255,.4); }
+  /* Sheet form fields */
+  .sheet-field { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
+  .sheet-field label { font-size: 12px; color: var(--muted); }
+  .sheet-field textarea, .sheet-field input[type=text], .sheet-field select {
+    width: 100%; padding: 10px; border-radius: 8px;
+    background: var(--panel-2); border: 1px solid var(--border);
+    color: var(--text); font-size: 14px; font-family: inherit;
+  }
+  .sheet-field textarea { min-height: 60px; resize: none; }
+  .sheet-field input[type=range] { width: 100%; accent-color: var(--accent); }
+  .sheet-toggle {
+    display: flex; align-items: center; gap: 8px; padding: 10px 0;
+    font-size: 14px; color: var(--text); cursor: pointer;
+  }
+  .sheet-toggle input { width: 20px; height: 20px; accent-color: var(--accent); }
+  .sheet-tabs {
+    display: flex; gap: 6px;
+    background: var(--panel-2); padding: 4px;
+    border-radius: 10px; margin-bottom: 12px;
+  }
+  .sheet-tab {
+    flex: 1; padding: 8px; border-radius: 8px;
+    background: transparent; border: none; color: var(--text);
+    font-size: 12px; font-family: inherit; cursor: pointer;
+  }
+  .sheet-tab.active { background: var(--accent); color: #fff; font-weight: 600; }
+  .sheet-tab-pane { display: none; }
+  .sheet-tab-pane.active { display: block; }
+  /* List rows inside sheets */
+  .list-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px; margin: 6px 0;
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .list-row .label {
+    flex: 1; font-size: 13px; color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .list-row .del {
+    flex: none; padding: 4px 10px; background: transparent;
+    border: 1px solid var(--border); color: #ff5c5c;
+    border-radius: 6px; font-size: 14px; font-family: inherit;
+  }
+  .list-empty { text-align: center; padding: 20px; color: var(--muted); font-size: 13px; }
+  .btn-full {
+    width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--panel-2); color: var(--text); font-size: 14px;
+    font-family: inherit; margin-bottom: 8px;
+  }
+  .btn-full.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .sheet-scroll { max-height: 65vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 </style>
 </head>
 <body>
 <div class="topbar">
-  <span class="title">🧽 图片去水印</span>
+  <div class="mode-tabs">
+    <button class="mode-tab active" data-mode="remove">🧽 去除</button>
+    <button class="mode-tab" data-mode="add">➕ 添加</button>
+    <button class="mode-tab" data-mode="edit">✏ 编辑</button>
+  </div>
   <button class="icon-btn" id="installBtn" style="display:none;">安装</button>
   <button class="icon-btn" id="helpBtn">?</button>
   <button class="icon-btn" id="openBtn">打开</button>
@@ -233,7 +344,8 @@
   </div>
 </div>
 
-<div class="toolbar">
+<!-- Remove mode toolbar -->
+<div class="toolbar active" data-mode="remove">
   <div class="tools-row">
     <button class="tool active" id="brushBtn" disabled><span class="ic">🖌</span>画笔</button>
     <button class="tool" id="eraserBtn" disabled><span class="ic">🧹</span>擦除</button>
@@ -263,6 +375,45 @@
   <button class="go-btn" id="inpaintBtn" disabled>✨ 去除水印</button>
 </div>
 
+<!-- Add mode toolbar -->
+<div class="toolbar" data-mode="add">
+  <div class="wm-strip" id="wmStrip"></div>
+  <div class="tools-row">
+    <button class="tool" id="editWmBtn" disabled><span class="ic">📝</span>文字</button>
+    <button class="tool" id="styleWmBtn" disabled><span class="ic">🎨</span>样式</button>
+    <button class="tool" id="transformWmBtn" disabled><span class="ic">🔄</span>变换</button>
+    <button class="tool" id="libraryBtn"><span class="ic">📚</span>库</button>
+    <button class="tool" id="templatesBtn"><span class="ic">🎁</span>模板</button>
+  </div>
+  <div class="tools-row">
+    <button class="tool" id="saveWmBtn" disabled><span class="ic">💾</span>存水印</button>
+    <button class="tool" id="saveTplBtn" disabled><span class="ic">💾</span>存模板</button>
+    <button class="tool" id="batchBtn" disabled><span class="ic">📦</span>批量</button>
+    <button class="tool" id="deleteWmBtn" disabled><span class="ic">🗑</span>删除</button>
+  </div>
+</div>
+
+<!-- Edit mode toolbar -->
+<div class="toolbar" data-mode="edit">
+  <div class="tools-row">
+    <button class="tool active" id="editBrushBtn" disabled><span class="ic">🖌</span>画笔</button>
+    <button class="tool" id="editCropBtn" disabled><span class="ic">✂</span>裁剪</button>
+    <button class="tool" id="rotateLeftBtn" disabled><span class="ic">⟲</span>左转</button>
+    <button class="tool" id="rotateRightBtn" disabled><span class="ic">⟳</span>右转</button>
+    <button class="tool" id="editUndoBtn" disabled><span class="ic">↶</span>撤销</button>
+  </div>
+  <div class="slider-row" id="editBrushSizeRow">
+    <label>笔刷</label>
+    <input type="range" id="editSizeRange" min="4" max="140" value="10">
+    <span class="v" id="editSizeVal">10px</span>
+  </div>
+  <div class="chip-grid" id="editColorPalette" style="padding:2px 0;"></div>
+  <div id="editCropActions" style="display:none;gap:8px;">
+    <button class="tool" id="confirmCropBtn" disabled style="flex:1;">✓ 确认裁剪</button>
+    <button class="tool" id="cancelCropBtn" disabled style="flex:1;">取消</button>
+  </div>
+</div>
+
 <div class="sheet-mask" id="sheetMask">
   <div class="sheet">
     <h3>使用方法</h3>
@@ -278,7 +429,121 @@
   </div>
 </div>
 
+<!-- Text edit sheet -->
+<div class="sheet-mask" id="textSheetMask">
+  <div class="sheet sheet-scroll">
+    <h3>文本内容</h3>
+    <div class="sheet-field">
+      <label>文字</label>
+      <textarea id="wmText" placeholder="输入文字"></textarea>
+    </div>
+    <div class="sheet-field">
+      <label>字体</label>
+      <select id="wmFont">
+        <option value="Microsoft YaHei">微软雅黑</option>
+        <option value="SimHei">黑体</option>
+        <option value="SimSun">宋体</option>
+        <option value="KaiTi">楷体</option>
+        <option value="FangSong">仿宋</option>
+        <option value="STXihei">华文细黑</option>
+        <option value="STKaiti">华文楷体</option>
+        <option value="STLiti">华文隶书</option>
+        <option value="STCaiyun">华文彩云</option>
+        <option value="STHupo">华文琥珀</option>
+        <option value="Arial">Arial</option>
+        <option value="Impact">Impact</option>
+        <option value="Georgia">Georgia</option>
+        <option value="Times New Roman">Times New Roman</option>
+        <option value="Verdana">Verdana</option>
+        <option value="Courier New">Courier New</option>
+      </select>
+    </div>
+    <div class="sheet-field">
+      <label>字号 <span id="wmFontSizeVal" style="color:var(--text);">48 px</span></label>
+      <input type="range" id="wmFontSize" min="12" max="200" value="48">
+    </div>
+    <div class="sheet-field">
+      <label>颜色</label>
+      <div class="chip-grid" id="wmColorPalette"></div>
+    </div>
+    <button class="sheet close" id="textSheetClose">完成</button>
+  </div>
+</div>
+
+<!-- Style sheet -->
+<div class="sheet-mask" id="styleSheetMask">
+  <div class="sheet sheet-scroll">
+    <h3>样式</h3>
+    <div class="sheet-field">
+      <label>透明度 <span id="wmOpacityVal" style="color:var(--text);">80%</span></label>
+      <input type="range" id="wmOpacity" min="0" max="100" value="80">
+    </div>
+    <label class="sheet-toggle">
+      <input type="checkbox" id="wmBorderToggle"><span>描边</span>
+    </label>
+    <div id="wmBorderPanel" style="display:none;">
+      <div class="sheet-field">
+        <label>描边颜色</label>
+        <div class="chip-grid" id="wmBorderPalette"></div>
+      </div>
+      <div class="sheet-field">
+        <label>描边宽度 <span id="wmBorderWidthVal" style="color:var(--text);">2 px</span></label>
+        <input type="range" id="wmBorderWidth" min="1" max="8" value="2">
+      </div>
+    </div>
+    <label class="sheet-toggle">
+      <input type="checkbox" id="wmBgToggle"><span>背景</span>
+    </label>
+    <div id="wmBgPanel" style="display:none;">
+      <div class="sheet-field">
+        <label>背景颜色</label>
+        <div class="chip-grid" id="wmBgPalette"></div>
+      </div>
+      <div class="sheet-field">
+        <label>背景透明度 <span id="wmBgOpacityVal" style="color:var(--text);">60%</span></label>
+        <input type="range" id="wmBgOpacity" min="0" max="100" value="60">
+      </div>
+      <div class="sheet-field">
+        <label>圆角 <span id="wmBgRadiusVal" style="color:var(--text);">0 px</span></label>
+        <input type="range" id="wmBgRadius" min="0" max="50" value="0">
+      </div>
+    </div>
+    <button class="sheet close" id="styleSheetClose">完成</button>
+  </div>
+</div>
+
+<!-- Transform sheet -->
+<div class="sheet-mask" id="transformSheetMask">
+  <div class="sheet">
+    <h3>变换</h3>
+    <div class="sheet-field">
+      <label>旋转 <span id="wmRotationVal" style="color:var(--text);">0°</span></label>
+      <input type="range" id="wmRotation" min="-180" max="180" value="0">
+    </div>
+    <button class="btn-full" id="wmResetPosBtn">⟲ 重置到中心</button>
+    <button class="sheet close" id="transformSheetClose">完成</button>
+  </div>
+</div>
+
+<!-- Library / Templates sheet -->
+<div class="sheet-mask" id="libSheetMask">
+  <div class="sheet sheet-scroll">
+    <div class="sheet-tabs">
+      <button class="sheet-tab active" data-tab="library">我的水印库</button>
+      <button class="sheet-tab" data-tab="templates">模板</button>
+    </div>
+    <div class="sheet-tab-pane active" data-tab="library">
+      <div id="libraryList"></div>
+    </div>
+    <div class="sheet-tab-pane" data-tab="templates">
+      <div id="tplList"></div>
+    </div>
+    <button class="sheet close" id="libSheetClose">关闭</button>
+  </div>
+</div>
+
 <input type="file" id="fileInput" accept="image/*">
+<input type="file" id="batchFileInput" accept="image/*" multiple>
 <script src="./ai-inpaint.js"></script>
 <script>
 "use strict";
@@ -297,6 +562,7 @@
 
   // ---------- State ----------
   let hasImage = false;
+  let appMode = "remove";   // "remove" | "add" | "edit"
   let tool = "brush";
   let brushSize = 40;      // image px
   const MAX_SIDE = 2400;   // cap working resolution for phone performance
@@ -307,8 +573,115 @@
   const undoStack = [];
   const MAX_UNDO = 8;
 
-  const controls = ["saveBtn","brushBtn","eraserBtn","undoBtn","clearBtn","resetBtn","inpaintBtn"];
-  const setEnabled = (on) => controls.forEach(id => $(id).disabled = !on);
+  // watermark state
+  let textWatermarks = [];
+  let selectedWatermarkIndex = -1;
+  let isDraggingText = false;
+  let dragOffset = { x: 0, y: 0 };
+
+  // edit mode state
+  let editTool = "brush";       // "brush" | "crop"
+  let editBrushColor = "#ff3b3b";
+  let editBrushSize = 10;
+  let cropRect = null;
+  let cropStart = null;
+  let cropDragging = false;
+
+  const controls = ["saveBtn","brushBtn","eraserBtn","undoBtn","clearBtn","resetBtn","inpaintBtn",
+    "editBrushBtn","editCropBtn","rotateLeftBtn","rotateRightBtn",
+    "libraryBtn","templatesBtn"];
+  const setEnabled = (on) => controls.forEach(id => { const el=$(id); if (el) el.disabled = !on; });
+
+  // 常用颜色
+  const PALETTE = [
+    "#ffffff", "#f5f5f5", "#c0c0c0", "#808080", "#404040", "#000000",
+    "#ff3b3b", "#ff9800", "#ffeb3b", "#4caf50", "#00bcd4", "#2196f3",
+    "#673ab7", "#e91e63", "#795548", "#8b0000", "#006400", "#00008b",
+    "#4b0082", "#ff6b6b", "#ffd93d", "#6bcf7f", "#f472b6", "#c084fc"
+  ];
+
+  // ---------- 水印库 & 模板存储 ----------
+  const STORAGE_WATERMARKS = "guigui_watermarks_v1";
+  const STORAGE_TEMPLATES = "guigui_templates_v1";
+
+  function watermarkToNormalized(wm, W, H) {
+    return {
+      text: wm.text, nx: wm.x/W, ny: wm.y/H, nfontSize: wm.fontSize/H,
+      fontFamily: wm.fontFamily, color: wm.color, opacity: wm.opacity,
+      rotation: wm.rotation,
+      hasBorder: wm.hasBorder, borderColor: wm.borderColor, borderWidth: wm.borderWidth,
+      hasBackground: wm.hasBackground, backgroundColor: wm.backgroundColor,
+      backgroundOpacity: wm.backgroundOpacity, bgRadius: wm.bgRadius || 0
+    };
+  }
+  function normalizedToWatermark(nw, W, H) {
+    return {
+      text: nw.text, x: nw.nx*W, y: nw.ny*H, fontSize: Math.max(8, nw.nfontSize*H),
+      fontFamily: nw.fontFamily, color: nw.color, opacity: nw.opacity,
+      rotation: nw.rotation,
+      hasBorder: nw.hasBorder, borderColor: nw.borderColor, borderWidth: nw.borderWidth,
+      hasBackground: nw.hasBackground, backgroundColor: nw.backgroundColor,
+      backgroundOpacity: nw.backgroundOpacity, bgRadius: nw.bgRadius || 0
+    };
+  }
+  const BUILTIN_TEMPLATES = [
+    { id:"builtin-corner", name:"🎁 简约角标", isBuiltin:true, watermarks:[
+      { text:"© 我的水印", nx:0.82, ny:0.94, nfontSize:0.035,
+        fontFamily:"Microsoft YaHei", color:"#ffffff", opacity:0.85, rotation:0,
+        hasBorder:true, borderColor:"#000000", borderWidth:2,
+        hasBackground:false, backgroundColor:"#000000", backgroundOpacity:0.6, bgRadius:0 } ]},
+    { id:"builtin-center-large", name:"🎁 居中大字", isBuiltin:true, watermarks:[
+      { text:"样品展示", nx:0.5, ny:0.5, nfontSize:0.12,
+        fontFamily:"SimHei", color:"#ffffff", opacity:0.55, rotation:-15,
+        hasBorder:true, borderColor:"#000000", borderWidth:4,
+        hasBackground:false, backgroundColor:"#000000", backgroundOpacity:0.5, bgRadius:0 } ]},
+    { id:"builtin-badge", name:"🎁 红色徽章", isBuiltin:true, watermarks:[
+      { text:"限时特惠", nx:0.18, ny:0.1, nfontSize:0.045,
+        fontFamily:"Microsoft YaHei", color:"#ffffff", opacity:1, rotation:-8,
+        hasBorder:false, borderColor:"#000000", borderWidth:2,
+        hasBackground:true, backgroundColor:"#ff3b3b", backgroundOpacity:0.92, bgRadius:20 } ]},
+    { id:"builtin-two-corners", name:"🎁 上下双条", isBuiltin:true, watermarks:[
+      { text:"微信：xxxxxxx", nx:0.5, ny:0.06, nfontSize:0.03,
+        fontFamily:"Microsoft YaHei", color:"#ffffff", opacity:0.9, rotation:0,
+        hasBorder:false, borderColor:"#000000", borderWidth:2,
+        hasBackground:true, backgroundColor:"#000000", backgroundOpacity:0.55, bgRadius:12 },
+      { text:"© 我的品牌", nx:0.5, ny:0.95, nfontSize:0.028,
+        fontFamily:"Microsoft YaHei", color:"#ffffff", opacity:0.85, rotation:0,
+        hasBorder:true, borderColor:"#000000", borderWidth:2,
+        hasBackground:false, backgroundColor:"#000000", backgroundOpacity:0.6, bgRadius:0 } ]},
+    { id:"builtin-diagonal-tile", name:"🎁 斜向平铺（防盗图）", isBuiltin:true, watermarks:(function(){
+      const arr=[]; const positions=[[0.2,0.2],[0.55,0.2],[0.85,0.2],[0.35,0.5],[0.7,0.5],[0.2,0.8],[0.55,0.8],[0.85,0.8]];
+      positions.forEach(([nx,ny])=>arr.push({
+        text:"样品", nx, ny, nfontSize:0.045,
+        fontFamily:"SimHei", color:"#ffffff", opacity:0.32, rotation:-30,
+        hasBorder:false, borderColor:"#000000", borderWidth:1,
+        hasBackground:false, backgroundColor:"#000000", backgroundOpacity:0.5, bgRadius:0
+      }));
+      return arr;
+    })() }
+  ];
+
+  let savedWatermarks = [];
+  let userTemplates = [];
+  function loadFromStorage() {
+    try { const w=localStorage.getItem(STORAGE_WATERMARKS); if (w) savedWatermarks=JSON.parse(w)||[]; }
+    catch(e){ console.warn(e); }
+    try { const t=localStorage.getItem(STORAGE_TEMPLATES); if (t) userTemplates=JSON.parse(t)||[]; }
+    catch(e){ console.warn(e); }
+  }
+  function persistWatermarks(){ try{ localStorage.setItem(STORAGE_WATERMARKS, JSON.stringify(savedWatermarks));}catch(e){console.warn(e);} }
+  function persistTemplates(){ try{ localStorage.setItem(STORAGE_TEMPLATES, JSON.stringify(userTemplates));}catch(e){console.warn(e);} }
+
+  function defaultWatermark() {
+    return {
+      text:"水印文字", x:workCanvas.width/2, y:workCanvas.height/2,
+      fontSize: Math.max(24, Math.round(workCanvas.height * 0.05)),
+      fontFamily:"Microsoft YaHei", color:"#ffffff", opacity:0.85, rotation:0,
+      hasBorder:true, borderColor:"#000000", borderWidth:2,
+      hasBackground:false, backgroundColor:"#000000", backgroundOpacity:0.6, bgRadius:0
+    };
+  }
+  function getSelectedWatermark(){ return textWatermarks[selectedWatermarkIndex] || null; }
 
   function showStatus(t) { statusText.textContent = t; status.classList.add("show"); }
   function hideStatus() { status.classList.remove("show"); }
@@ -336,6 +709,15 @@
     modeHint.style.display = "block";
     setEnabled(true);
     $("undoBtn").disabled = true;
+    if ($("editUndoBtn")) $("editUndoBtn").disabled = true;
+    // reset watermarks & crop state
+    textWatermarks = [];
+    selectedWatermarkIndex = -1;
+    cropRect = null; cropDragging = false;
+    if ($("confirmCropBtn")) $("confirmCropBtn").disabled = true;
+    if ($("cancelCropBtn")) $("cancelCropBtn").disabled = true;
+    updateWmStrip();
+    refreshWmButtonStates();
     fitView();
     render();
     setTimeout(() => { modeHint.style.transition = "opacity .5s"; modeHint.style.opacity = "0"; }, 3500);
@@ -352,12 +734,179 @@
   function applyTransform() {
     wrap.style.transform = `translate(${tx}px, ${ty}px) scale(${zoom})`;
   }
+  function renderTextWatermark(ctx, wm) {
+    if (!wm || !wm.text.trim()) return;
+    ctx.save();
+    ctx.translate(wm.x, wm.y);
+    ctx.rotate(wm.rotation * Math.PI / 180);
+    ctx.font = `${wm.fontSize}px "${wm.fontFamily}", sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const metrics = ctx.measureText(wm.text);
+    const textWidth = metrics.width;
+    const textHeight = wm.fontSize * 1.2;
+    if (wm.hasBackground) {
+      ctx.globalAlpha = wm.backgroundOpacity;
+      ctx.fillStyle = wm.backgroundColor;
+      const padX = textWidth * 0.2, padY = textHeight * 0.1;
+      const radius = wm.bgRadius || 0;
+      if (radius > 0) {
+        const x = -textWidth/2 - padX, y = -textHeight/2 - padY;
+        const w = textWidth + padX*2, h = textHeight + padY*2;
+        ctx.beginPath();
+        ctx.moveTo(x + radius, y);
+        ctx.lineTo(x + w - radius, y);
+        ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+        ctx.lineTo(x + w, y + h - radius);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+        ctx.lineTo(x + radius, y + h);
+        ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+        ctx.lineTo(x, y + radius);
+        ctx.quadraticCurveTo(x, y, x + radius, y);
+        ctx.closePath();
+        ctx.fill();
+      } else {
+        ctx.fillRect(-textWidth/2 - padX, -textHeight/2 - padY,
+                     textWidth + padX*2, textHeight + padY*2);
+      }
+    }
+    ctx.globalAlpha = wm.opacity;
+    if (wm.hasBorder) {
+      ctx.strokeStyle = wm.borderColor;
+      ctx.lineWidth = wm.borderWidth;
+      ctx.lineJoin = "round";
+      ctx.strokeText(wm.text, 0, 0);
+    }
+    ctx.fillStyle = wm.color;
+    ctx.fillText(wm.text, 0, 0);
+    // 选中框
+    if (appMode === "add" && wm === getSelectedWatermark()) {
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = "#4f8cff";
+      ctx.lineWidth = Math.max(2, wm.fontSize * 0.03);
+      ctx.setLineDash([wm.fontSize * 0.15, wm.fontSize * 0.1]);
+      const padX = textWidth * 0.2, padY = textHeight * 0.1;
+      ctx.strokeRect(-textWidth/2 - padX, -textHeight/2 - padY,
+                     textWidth + padX*2, textHeight + padY*2);
+    }
+    ctx.restore();
+  }
+
   function render() {
     viewCtx.clearRect(0,0,view.width,view.height);
     viewCtx.drawImage(workCanvas,0,0);
-    viewCtx.globalAlpha = 0.55;
-    viewCtx.drawImage(maskCanvas,0,0);
-    viewCtx.globalAlpha = 1;
+    if (appMode === "remove") {
+      viewCtx.globalAlpha = 0.55;
+      viewCtx.drawImage(maskCanvas,0,0);
+      viewCtx.globalAlpha = 1;
+    } else if (appMode === "add") {
+      textWatermarks.forEach(wm => renderTextWatermark(viewCtx, wm));
+    } else if (appMode === "edit" && cropRect && cropRect.w > 0 && cropRect.h > 0) {
+      viewCtx.save();
+      viewCtx.fillStyle = "rgba(0,0,0,0.5)";
+      viewCtx.fillRect(0, 0, view.width, view.height);
+      viewCtx.clearRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
+      viewCtx.drawImage(workCanvas,
+        cropRect.x, cropRect.y, cropRect.w, cropRect.h,
+        cropRect.x, cropRect.y, cropRect.w, cropRect.h);
+      viewCtx.strokeStyle = "#4f8cff";
+      viewCtx.lineWidth = Math.max(3, workCanvas.height * 0.005);
+      viewCtx.setLineDash([workCanvas.height * 0.02, workCanvas.height * 0.015]);
+      viewCtx.strokeRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
+      viewCtx.restore();
+    }
+  }
+
+  // 水印命中检测（考虑旋转）
+  function isPointInText(px, py, wm) {
+    if (!wm || !wm.text.trim()) return false;
+    const tc = document.createElement("canvas");
+    const tctx = tc.getContext("2d");
+    tctx.font = `${wm.fontSize}px "${wm.fontFamily}", sans-serif`;
+    const metrics = tctx.measureText(wm.text);
+    const textWidth = metrics.width;
+    const textHeight = wm.fontSize * 1.2;
+    const padX = textWidth * 0.2, padY = textHeight * 0.1;
+    const dx = px - wm.x, dy = py - wm.y;
+    const rad = -wm.rotation * Math.PI / 180;
+    const lx = dx * Math.cos(rad) - dy * Math.sin(rad);
+    const ly = dx * Math.sin(rad) + dy * Math.cos(rad);
+    const halfW = textWidth / 2 + padX;
+    const halfH = textHeight / 2 + padY;
+    return lx >= -halfW && lx <= halfW && ly >= -halfH && ly <= halfH;
+  }
+  function hitTestWatermarks(px, py) {
+    for (let i = textWatermarks.length - 1; i >= 0; i--) {
+      if (isPointInText(px, py, textWatermarks[i])) return i;
+    }
+    return -1;
+  }
+
+  // Edit brush
+  function editStamp(x, y) {
+    workCtx.globalCompositeOperation = "source-over";
+    workCtx.fillStyle = editBrushColor;
+    workCtx.beginPath();
+    workCtx.arc(x, y, editBrushSize / 2, 0, Math.PI * 2);
+    workCtx.fill();
+  }
+  let editLastPt = null;
+  function editStrokeTo(x, y) {
+    if (!editLastPt) { editStamp(x, y); editLastPt = { x, y }; return; }
+    const dx = x - editLastPt.x, dy = y - editLastPt.y;
+    const dist = Math.hypot(dx, dy);
+    const step = Math.max(1, editBrushSize / 4);
+    const n = Math.ceil(dist / step);
+    for (let i = 1; i <= n; i++) editStamp(editLastPt.x + dx*i/n, editLastPt.y + dy*i/n);
+    editLastPt = { x, y };
+  }
+
+  function confirmCrop() {
+    if (!cropRect) return;
+    const x = Math.max(0, Math.round(cropRect.x));
+    const y = Math.max(0, Math.round(cropRect.y));
+    const w = Math.min(workCanvas.width - x, Math.round(cropRect.w));
+    const h = Math.min(workCanvas.height - y, Math.round(cropRect.h));
+    if (w < 5 || h < 5) { cancelCrop(); return; }
+    pushUndo();
+    const cropped = document.createElement("canvas");
+    cropped.width = w; cropped.height = h;
+    cropped.getContext("2d").drawImage(workCanvas, x, y, w, h, 0, 0, w, h);
+    workCanvas.width = w; workCanvas.height = h;
+    maskCanvas.width = w; maskCanvas.height = h;
+    view.width = w; view.height = h;
+    workCtx.drawImage(cropped, 0, 0);
+    maskCtx.clearRect(0, 0, w, h);
+    cropRect = null;
+    $("confirmCropBtn").disabled = true;
+    $("cancelCropBtn").disabled = true;
+    fitView();
+    render();
+  }
+  function cancelCrop() {
+    cropRect = null;
+    $("confirmCropBtn").disabled = true;
+    $("cancelCropBtn").disabled = true;
+    render();
+  }
+  function rotateImage(deg) {
+    pushUndo();
+    const rotated = document.createElement("canvas");
+    const rad = deg * Math.PI / 180;
+    const nw = workCanvas.height, nh = workCanvas.width;
+    rotated.width = nw; rotated.height = nh;
+    const rctx = rotated.getContext("2d");
+    rctx.translate(nw/2, nh/2);
+    rctx.rotate(rad);
+    rctx.drawImage(workCanvas, -workCanvas.width/2, -workCanvas.height/2);
+    workCanvas.width = nw; workCanvas.height = nh;
+    maskCanvas.width = nw; maskCanvas.height = nh;
+    view.width = nw; view.height = nh;
+    workCtx.drawImage(rotated, 0, 0);
+    maskCtx.clearRect(0, 0, nw, nh);
+    cropRect = null;
+    fitView();
+    render();
   }
   // ---------- Screen -> image coords ----------
   function toImage(clientX, clientY) {
@@ -411,19 +960,48 @@
       gesture = "pending";
       pendingId = e.pointerId;
       lastPt = null;
+      editLastPt = null;
       clearPending();
       pendingTimer = setTimeout(() => {
         pendingTimer = null;
-        // 计时结束仍是单指 → 确认是涂抹，从当前位置落笔
         if (gesture === "pending" && pointers.size === 1) {
           gesture = "draw";
           const pt = pointers.get(pendingId);
-          if (pt) { const p = toImage(pt.x, pt.y); strokeTo(p.x, p.y); render(); }
+          if (!pt) return;
+          const p = toImage(pt.x, pt.y);
+          if (appMode === "remove") {
+            strokeTo(p.x, p.y); render();
+          } else if (appMode === "add") {
+            const idx = hitTestWatermarks(p.x, p.y);
+            if (idx >= 0) {
+              selectedWatermarkIndex = idx;
+              const wm = textWatermarks[idx];
+              isDraggingText = true;
+              dragOffset.x = p.x - wm.x;
+              dragOffset.y = p.y - wm.y;
+            } else {
+              selectedWatermarkIndex = -1;
+            }
+            updateWmStrip();
+            refreshWmButtonStates();
+            render();
+          } else if (appMode === "edit") {
+            if (editTool === "brush") {
+              pushUndo();
+              editStamp(p.x, p.y); render();
+            } else if (editTool === "crop") {
+              cropDragging = true;
+              cropStart = { x: p.x, y: p.y };
+              cropRect = { x: p.x, y: p.y, w: 0, h: 0 };
+            }
+          }
         }
       }, TAP_DELAY);
     } else if (pointers.size === 2) {
       // 第二指到达：取消待落笔，进入缩放
       clearPending();
+      isDraggingText = false;
+      cropDragging = false;
       gesture = "pinch";
       startPinch();
     }
@@ -435,26 +1013,67 @@
 
     if (gesture === "draw" && pointers.size === 1) {
       const p = toImage(e.clientX, e.clientY);
-      strokeTo(p.x, p.y);
-      render();
+      if (appMode === "remove") {
+        strokeTo(p.x, p.y); render();
+      } else if (appMode === "add") {
+        const wm = getSelectedWatermark();
+        if (isDraggingText && wm) {
+          wm.x = p.x - dragOffset.x;
+          wm.y = p.y - dragOffset.y;
+          render();
+        }
+      } else if (appMode === "edit") {
+        if (editTool === "brush") {
+          editStrokeTo(p.x, p.y); render();
+        } else if (editTool === "crop" && cropDragging) {
+          cropRect = {
+            x: Math.min(cropStart.x, p.x),
+            y: Math.min(cropStart.y, p.y),
+            w: Math.abs(p.x - cropStart.x),
+            h: Math.abs(p.y - cropStart.y)
+          };
+          render();
+        }
+      }
     } else if (gesture === "pinch" && pointers.size >= 2) {
       updatePinch();
     }
-    // gesture === "pending" 时不画，只更新指针位置，等计时器确认
   });
 
   function endPointer(e) {
     if (!pointers.has(e.pointerId)) return;
     pointers.delete(e.pointerId);
     lastPt = null;
-    // 若在待确认期间就抬起（快速点一下）：确认是单指，补一个点
+    editLastPt = null;
+    // 若在待确认期间就抬起（快速点一下）
     if (gesture === "pending" && e.pointerId === pendingId) {
       clearPending();
       const p = toImage(e.clientX, e.clientY);
-      stamp(p.x, p.y); render();
+      if (appMode === "remove") {
+        stamp(p.x, p.y); render();
+      } else if (appMode === "add") {
+        const idx = hitTestWatermarks(p.x, p.y);
+        selectedWatermarkIndex = idx;
+        updateWmStrip();
+        refreshWmButtonStates();
+        render();
+      } else if (appMode === "edit") {
+        if (editTool === "brush") {
+          pushUndo();
+          editStamp(p.x, p.y); render();
+        }
+      }
+    }
+    // 结束拖拽/裁剪
+    isDraggingText = false;
+    if (cropDragging) {
+      cropDragging = false;
+      const valid = cropRect && cropRect.w >= 5 && cropRect.h >= 5;
+      $("confirmCropBtn").disabled = !valid;
+      $("cancelCropBtn").disabled = !valid;
     }
     if (pointers.size === 0) { gesture = "none"; clearPending(); }
-    else if (pointers.size === 1) { gesture = "none"; } // 缩放抬起一指后不恢复涂抹
+    else if (pointers.size === 1) { gesture = "none"; }
   }
   stage.addEventListener("pointerup", endPointer);
   stage.addEventListener("pointercancel", endPointer);
@@ -706,6 +1325,7 @@
     if (undoStack.length>=MAX_UNDO) undoStack.shift();
     undoStack.push(workCtx.getImageData(0,0,workCanvas.width,workCanvas.height));
     $("undoBtn").disabled=false;
+    if ($("editUndoBtn")) $("editUndoBtn").disabled = false;
   }
   function runClassic(quality) {
     pushUndo();
@@ -779,8 +1399,19 @@
   $("inpaintBtn").onclick = doInpaint;
   $("undoBtn").onclick = () => {
     if (!undoStack.length) return;
-    workCtx.putImageData(undoStack.pop(),0,0);
-    if (!undoStack.length) $("undoBtn").disabled=true;
+    const snap = undoStack.pop();
+    if (workCanvas.width !== snap.width || workCanvas.height !== snap.height) {
+      workCanvas.width = snap.width; workCanvas.height = snap.height;
+      maskCanvas.width = snap.width; maskCanvas.height = snap.height;
+      view.width = snap.width; view.height = snap.height;
+      maskCtx.clearRect(0,0,snap.width,snap.height);
+      fitView();
+    }
+    workCtx.putImageData(snap,0,0);
+    if (!undoStack.length) {
+      $("undoBtn").disabled=true;
+      if ($("editUndoBtn")) $("editUndoBtn").disabled = true;
+    }
     render();
   };
   $("resetBtn").onclick = () => {
@@ -793,26 +1424,37 @@
   };
 
   // ---------- Save ----------
-  // 手机优先用系统分享面板（内含“存储图像”可直接存到相册），
-  // 不支持时回退为下载文件。
+  function getFinalCanvas() {
+    const hasAnyWm = appMode === "add" && textWatermarks.some(w => w.text && w.text.trim());
+    if (!hasAnyWm) return workCanvas;
+    const composite = document.createElement("canvas");
+    composite.width = workCanvas.width;
+    composite.height = workCanvas.height;
+    const ctx = composite.getContext("2d");
+    ctx.drawImage(workCanvas, 0, 0);
+    // 保存时清空选中框
+    const oldSel = selectedWatermarkIndex;
+    selectedWatermarkIndex = -1;
+    textWatermarks.forEach(wm => renderTextWatermark(ctx, wm));
+    selectedWatermarkIndex = oldSel;
+    return composite;
+  }
   $("saveBtn").onclick = () => {
-    workCanvas.toBlob(async (blob) => {
+    const finalCanvas = getFinalCanvas();
+    finalCanvas.toBlob(async (blob) => {
       if (!blob) return;
-      const name = "去水印_" + Date.now() + ".png";
+      const prefix = appMode === "add" ? "加水印_" :
+                     appMode === "edit" ? "编辑_" : "去水印_";
+      const name = prefix + Date.now() + ".png";
       const file = new File([blob], name, { type: "image/png" });
-
-      // 能分享文件就走分享（iOS/安卓可选“存储图像”存到相册）
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         try {
-          await navigator.share({ files: [file], title: "去水印结果" });
+          await navigator.share({ files: [file], title: "处理结果" });
           return;
         } catch (err) {
-          // 用户取消分享则直接返回，不再弹下载
           if (err && err.name === "AbortError") return;
-          // 其它错误继续回退到下载
         }
       }
-      // 回退：普通下载
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url; a.download = name;
@@ -831,6 +1473,435 @@
     const items=e.clipboardData&&e.clipboardData.items; if(!items) return;
     for (const it of items) if (it.type.startsWith("image/")) { loadImage(URL.createObjectURL(it.getAsFile())); break; }
   });
+
+  // ---------- Mode switching ----------
+  function setMode(m) {
+    appMode = m;
+    document.querySelectorAll(".mode-tab").forEach(b =>
+      b.classList.toggle("active", b.dataset.mode === m));
+    document.querySelectorAll(".toolbar[data-mode]").forEach(t =>
+      t.classList.toggle("active", t.dataset.mode === m));
+    if (m !== "edit") { cropRect = null; cropDragging = false; }
+    // 短暂显示模式提示
+    if (hasImage) {
+      const hints = {
+        remove: "<b>单指</b>涂抹水印 · <b>双指</b>缩放/移动",
+        add: "<b>单指</b>拖动水印 · <b>双指</b>缩放/移动 · 点下方按钮编辑",
+        edit: "<b>单指</b>画笔/裁剪 · <b>双指</b>缩放/移动"
+      };
+      modeHint.innerHTML = hints[m] || "";
+      modeHint.style.transition = "";
+      modeHint.style.opacity = "1";
+      modeHint.style.display = "block";
+      setTimeout(() => {
+        modeHint.style.transition = "opacity .5s";
+        modeHint.style.opacity = "0";
+      }, 2500);
+    }
+    refreshWmButtonStates();
+    render();
+  }
+  document.querySelectorAll(".mode-tab").forEach(b =>
+    b.onclick = () => setMode(b.dataset.mode));
+
+  // ---------- Add mode helpers ----------
+  function refreshWmButtonStates() {
+    const wm = getSelectedWatermark();
+    const hasWm = !!wm;
+    const hasAny = textWatermarks.length > 0;
+    const ids = ["editWmBtn","styleWmBtn","transformWmBtn","deleteWmBtn","saveWmBtn"];
+    ids.forEach(id => { const el = $(id); if (el) el.disabled = !hasWm; });
+    if ($("saveTplBtn")) $("saveTplBtn").disabled = !hasAny;
+    if ($("batchBtn")) $("batchBtn").disabled = !hasAny;
+  }
+  function updateWmStrip() {
+    const strip = $("wmStrip");
+    if (!strip) return;
+    strip.innerHTML = "";
+    textWatermarks.forEach((wm, i) => {
+      const item = document.createElement("button");
+      item.className = "wm-item" + (i === selectedWatermarkIndex ? " active" : "");
+      item.textContent = (i+1) + ". " + (wm.text || "(空)");
+      item.onclick = () => {
+        selectedWatermarkIndex = i;
+        updateWmStrip();
+        refreshWmButtonStates();
+        render();
+      };
+      strip.appendChild(item);
+    });
+    const add = document.createElement("button");
+    add.className = "wm-add";
+    add.textContent = "＋ 新水印";
+    add.disabled = !hasImage;
+    add.onclick = () => {
+      if (!hasImage) return;
+      const src = getSelectedWatermark() ||
+                  (textWatermarks.length ? textWatermarks[textWatermarks.length-1] : null);
+      const wm = src ? { ...src } : defaultWatermark();
+      wm.x = (src ? src.x : workCanvas.width/2) + workCanvas.width * 0.05;
+      wm.y = (src ? src.y : workCanvas.height/2) + workCanvas.height * 0.05;
+      textWatermarks.push(wm);
+      selectedWatermarkIndex = textWatermarks.length - 1;
+      updateWmStrip();
+      refreshWmButtonStates();
+      render();
+    };
+    strip.appendChild(add);
+  }
+
+  $("deleteWmBtn").onclick = () => {
+    if (selectedWatermarkIndex < 0) return;
+    textWatermarks.splice(selectedWatermarkIndex, 1);
+    selectedWatermarkIndex = -1;
+    updateWmStrip();
+    refreshWmButtonStates();
+    render();
+  };
+
+  // ---------- Color palette helper ----------
+  function buildPalette(containerId, onPick, getCurrent) {
+    const c = $(containerId);
+    if (!c) return;
+    c.innerHTML = "";
+    PALETTE.forEach(color => {
+      const chip = document.createElement("div");
+      chip.className = "color-chip";
+      chip.style.background = color;
+      chip.dataset.color = color;
+      chip.onclick = () => {
+        onPick(color);
+        [...c.children].forEach(x =>
+          x.classList.toggle("active", x.dataset.color === color));
+      };
+      c.appendChild(chip);
+    });
+    const cur = getCurrent && getCurrent();
+    if (cur) [...c.children].forEach(x =>
+      x.classList.toggle("active", x.dataset.color === cur));
+  }
+  function setPaletteActive(containerId, color) {
+    const c = $(containerId); if (!c) return;
+    [...c.children].forEach(x =>
+      x.classList.toggle("active", x.dataset.color === color));
+  }
+
+  buildPalette("wmColorPalette",
+    (c) => { const w = getSelectedWatermark(); if (w) { w.color = c; render(); } },
+    () => { const w = getSelectedWatermark(); return w ? w.color : null; });
+  buildPalette("wmBorderPalette",
+    (c) => { const w = getSelectedWatermark(); if (w) { w.borderColor = c; render(); } },
+    () => { const w = getSelectedWatermark(); return w ? w.borderColor : null; });
+  buildPalette("wmBgPalette",
+    (c) => { const w = getSelectedWatermark(); if (w) { w.backgroundColor = c; render(); } },
+    () => { const w = getSelectedWatermark(); return w ? w.backgroundColor : null; });
+  buildPalette("editColorPalette",
+    (c) => { editBrushColor = c; },
+    () => editBrushColor);
+
+  // ---------- Sheet mask helper ----------
+  function openSheet(id) {
+    const el = $(id);
+    if (el) el.classList.add("show");
+  }
+  function closeSheet(id) {
+    const el = $(id);
+    if (el) el.classList.remove("show");
+  }
+  ["textSheetMask","styleSheetMask","transformSheetMask","libSheetMask"].forEach(id => {
+    const el = $(id);
+    if (el) el.addEventListener("click", (e) => { if (e.target === el) el.classList.remove("show"); });
+  });
+
+  // ---------- Text sheet ----------
+  function syncTextSheet() {
+    const wm = getSelectedWatermark(); if (!wm) return;
+    $("wmText").value = wm.text;
+    $("wmFont").value = wm.fontFamily;
+    $("wmFontSize").value = wm.fontSize;
+    $("wmFontSizeVal").textContent = wm.fontSize + " px";
+    setPaletteActive("wmColorPalette", wm.color);
+  }
+  $("editWmBtn").onclick = () => { if (!getSelectedWatermark()) return; syncTextSheet(); openSheet("textSheetMask"); };
+  $("textSheetClose").onclick = () => closeSheet("textSheetMask");
+  $("wmText").oninput = (e) => { const w=getSelectedWatermark(); if (!w) return; w.text = e.target.value; updateWmStrip(); render(); };
+  $("wmFont").onchange = (e) => { const w=getSelectedWatermark(); if (!w) return; w.fontFamily = e.target.value; render(); };
+  $("wmFontSize").oninput = (e) => {
+    const v = parseInt(e.target.value, 10);
+    $("wmFontSizeVal").textContent = v + " px";
+    const w = getSelectedWatermark(); if (!w) return; w.fontSize = v; render();
+  };
+
+  // ---------- Style sheet ----------
+  function syncStyleSheet() {
+    const wm = getSelectedWatermark(); if (!wm) return;
+    $("wmOpacity").value = Math.round(wm.opacity*100);
+    $("wmOpacityVal").textContent = Math.round(wm.opacity*100) + "%";
+    $("wmBorderToggle").checked = wm.hasBorder;
+    $("wmBorderPanel").style.display = wm.hasBorder ? "" : "none";
+    $("wmBorderWidth").value = wm.borderWidth;
+    $("wmBorderWidthVal").textContent = wm.borderWidth + " px";
+    $("wmBgToggle").checked = wm.hasBackground;
+    $("wmBgPanel").style.display = wm.hasBackground ? "" : "none";
+    $("wmBgOpacity").value = Math.round(wm.backgroundOpacity*100);
+    $("wmBgOpacityVal").textContent = Math.round(wm.backgroundOpacity*100) + "%";
+    $("wmBgRadius").value = wm.bgRadius || 0;
+    $("wmBgRadiusVal").textContent = (wm.bgRadius||0) + " px";
+    setPaletteActive("wmBorderPalette", wm.borderColor);
+    setPaletteActive("wmBgPalette", wm.backgroundColor);
+  }
+  $("styleWmBtn").onclick = () => { if (!getSelectedWatermark()) return; syncStyleSheet(); openSheet("styleSheetMask"); };
+  $("styleSheetClose").onclick = () => closeSheet("styleSheetMask");
+  $("wmOpacity").oninput = (e) => {
+    $("wmOpacityVal").textContent = e.target.value + "%";
+    const w=getSelectedWatermark(); if (!w) return;
+    w.opacity = parseInt(e.target.value,10)/100; render();
+  };
+  $("wmBorderToggle").onchange = (e) => {
+    $("wmBorderPanel").style.display = e.target.checked ? "" : "none";
+    const w=getSelectedWatermark(); if (!w) return; w.hasBorder = e.target.checked; render();
+  };
+  $("wmBorderWidth").oninput = (e) => {
+    $("wmBorderWidthVal").textContent = e.target.value + " px";
+    const w=getSelectedWatermark(); if (!w) return; w.borderWidth = parseInt(e.target.value,10); render();
+  };
+  $("wmBgToggle").onchange = (e) => {
+    $("wmBgPanel").style.display = e.target.checked ? "" : "none";
+    const w=getSelectedWatermark(); if (!w) return; w.hasBackground = e.target.checked; render();
+  };
+  $("wmBgOpacity").oninput = (e) => {
+    $("wmBgOpacityVal").textContent = e.target.value + "%";
+    const w=getSelectedWatermark(); if (!w) return; w.backgroundOpacity = parseInt(e.target.value,10)/100; render();
+  };
+  $("wmBgRadius").oninput = (e) => {
+    $("wmBgRadiusVal").textContent = e.target.value + " px";
+    const w=getSelectedWatermark(); if (!w) return; w.bgRadius = parseInt(e.target.value,10); render();
+  };
+
+  // ---------- Transform sheet ----------
+  function syncTransformSheet() {
+    const wm = getSelectedWatermark(); if (!wm) return;
+    $("wmRotation").value = wm.rotation;
+    $("wmRotationVal").textContent = wm.rotation + "°";
+  }
+  $("transformWmBtn").onclick = () => { if (!getSelectedWatermark()) return; syncTransformSheet(); openSheet("transformSheetMask"); };
+  $("transformSheetClose").onclick = () => closeSheet("transformSheetMask");
+  $("wmRotation").oninput = (e) => {
+    $("wmRotationVal").textContent = e.target.value + "°";
+    const w=getSelectedWatermark(); if (!w) return; w.rotation = parseInt(e.target.value,10); render();
+  };
+  $("wmResetPosBtn").onclick = () => {
+    const w=getSelectedWatermark(); if (!w) return;
+    w.x = workCanvas.width/2; w.y = workCanvas.height/2; render();
+  };
+
+  // ---------- Library / Templates ----------
+  function renderLibrary() {
+    const list = $("libraryList");
+    if (!list) return;
+    list.innerHTML = "";
+    if (!savedWatermarks.length) {
+      const empty = document.createElement("div");
+      empty.className = "list-empty";
+      empty.textContent = "还没有保存的水印";
+      list.appendChild(empty);
+      return;
+    }
+    savedWatermarks.forEach((sw, i) => {
+      const row = document.createElement("div");
+      row.className = "list-row";
+      const label = document.createElement("span");
+      label.className = "label";
+      label.textContent = sw.text || "(空)";
+      label.onclick = () => {
+        if (!hasImage) { alert("请先打开一张图片"); return; }
+        const wm = normalizedToWatermark(sw, workCanvas.width, workCanvas.height);
+        textWatermarks.push(wm);
+        selectedWatermarkIndex = textWatermarks.length - 1;
+        updateWmStrip();
+        refreshWmButtonStates();
+        closeSheet("libSheetMask");
+        render();
+      };
+      const del = document.createElement("button");
+      del.className = "del";
+      del.textContent = "删除";
+      del.onclick = (e) => {
+        e.stopPropagation();
+        if (!confirm("删除「" + (sw.text || "空") + "」？")) return;
+        savedWatermarks.splice(i, 1);
+        persistWatermarks();
+        renderLibrary();
+      };
+      row.appendChild(label);
+      row.appendChild(del);
+      list.appendChild(row);
+    });
+  }
+  function renderTpls() {
+    const list = $("tplList");
+    if (!list) return;
+    list.innerHTML = "";
+    const all = [...BUILTIN_TEMPLATES, ...userTemplates];
+    all.forEach((tpl, i) => {
+      const row = document.createElement("div");
+      row.className = "list-row";
+      const label = document.createElement("span");
+      label.className = "label";
+      label.textContent = tpl.name + " (" + tpl.watermarks.length + ")";
+      label.onclick = () => {
+        if (!hasImage) { alert("请先打开一张图片"); return; }
+        const wms = tpl.watermarks.map(nw =>
+          normalizedToWatermark(nw, workCanvas.width, workCanvas.height));
+        textWatermarks.push(...wms);
+        selectedWatermarkIndex = textWatermarks.length - 1;
+        updateWmStrip();
+        refreshWmButtonStates();
+        closeSheet("libSheetMask");
+        render();
+      };
+      row.appendChild(label);
+      if (!tpl.isBuiltin) {
+        const del = document.createElement("button");
+        del.className = "del";
+        del.textContent = "删除";
+        del.onclick = (e) => {
+          e.stopPropagation();
+          if (!confirm("删除模板「" + tpl.name + "」？")) return;
+          const uidx = i - BUILTIN_TEMPLATES.length;
+          if (uidx >= 0) {
+            userTemplates.splice(uidx, 1);
+            persistTemplates();
+            renderTpls();
+          }
+        };
+        row.appendChild(del);
+      }
+      list.appendChild(row);
+    });
+  }
+  $("libraryBtn").onclick = () => {
+    renderLibrary();
+    // switch to library tab
+    document.querySelectorAll(".sheet-tab").forEach(t =>
+      t.classList.toggle("active", t.dataset.tab === "library"));
+    document.querySelectorAll(".sheet-tab-pane").forEach(p =>
+      p.classList.toggle("active", p.dataset.tab === "library"));
+    openSheet("libSheetMask");
+  };
+  $("templatesBtn").onclick = () => {
+    renderTpls();
+    document.querySelectorAll(".sheet-tab").forEach(t =>
+      t.classList.toggle("active", t.dataset.tab === "templates"));
+    document.querySelectorAll(".sheet-tab-pane").forEach(p =>
+      p.classList.toggle("active", p.dataset.tab === "templates"));
+    openSheet("libSheetMask");
+  };
+  $("libSheetClose").onclick = () => closeSheet("libSheetMask");
+  document.querySelectorAll(".sheet-tab").forEach(t => t.onclick = () => {
+    document.querySelectorAll(".sheet-tab").forEach(b => b.classList.toggle("active", b === t));
+    document.querySelectorAll(".sheet-tab-pane").forEach(p =>
+      p.classList.toggle("active", p.dataset.tab === t.dataset.tab));
+    if (t.dataset.tab === "library") renderLibrary(); else renderTpls();
+  });
+  $("saveWmBtn").onclick = () => {
+    const wm = getSelectedWatermark(); if (!wm) return;
+    savedWatermarks.push(watermarkToNormalized(wm, workCanvas.width, workCanvas.height));
+    persistWatermarks();
+    showStatus("已保存到库"); setTimeout(hideStatus, 900);
+  };
+  $("saveTplBtn").onclick = () => {
+    if (!textWatermarks.length) return;
+    const name = prompt("模板名称：", "我的模板 " + (userTemplates.length + 1));
+    if (!name) return;
+    userTemplates.push({
+      id: "user-" + Date.now(), name: name, isBuiltin: false,
+      watermarks: textWatermarks.map(w => watermarkToNormalized(w, workCanvas.width, workCanvas.height))
+    });
+    persistTemplates();
+    showStatus("模板已保存"); setTimeout(hideStatus, 900);
+  };
+
+  // ---------- Batch processing ----------
+  $("batchBtn").onclick = () => $("batchFileInput").click();
+  $("batchFileInput").onchange = (e) => {
+    const files = e.target.files;
+    e.target.value = "";
+    if (!files || !files.length) return;
+    if (!textWatermarks.length) { alert("当前没有水印可用于批量处理"); return; }
+    const nWatermarks = textWatermarks.map(w => watermarkToNormalized(w, workCanvas.width, workCanvas.height));
+    const arr = Array.from(files);
+    showStatus("批量处理中 0 / " + arr.length);
+    let done = 0, ok = 0, fail = 0;
+    const processNext = (idx) => {
+      if (idx >= arr.length) {
+        hideStatus();
+        setTimeout(() => alert("批量完成：成功 " + ok + "，失败 " + fail), 100);
+        return;
+      }
+      const f = arr[idx];
+      const url = URL.createObjectURL(f);
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const W = img.naturalWidth, H = img.naturalHeight;
+          const cv = document.createElement("canvas");
+          cv.width = W; cv.height = H;
+          const ctx = cv.getContext("2d");
+          ctx.drawImage(img, 0, 0);
+          nWatermarks.forEach(nw => {
+            const wm = normalizedToWatermark(nw, W, H);
+            renderTextWatermark(ctx, wm);
+          });
+          cv.toBlob((blob) => {
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            const baseName = (f.name || "image").replace(/\.[^.]+$/, "");
+            a.download = "加水印_" + baseName + "_" + Date.now() + ".png";
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+            URL.revokeObjectURL(url);
+            ok++; done++;
+            showStatus("批量处理中 " + done + " / " + arr.length);
+            setTimeout(() => processNext(idx + 1), 300);
+          }, "image/png");
+        } catch (err) {
+          console.error(err); fail++; done++;
+          URL.revokeObjectURL(url);
+          setTimeout(() => processNext(idx + 1), 100);
+        }
+      };
+      img.onerror = () => { fail++; done++; URL.revokeObjectURL(url); setTimeout(() => processNext(idx + 1), 100); };
+      img.src = url;
+    };
+    processNext(0);
+  };
+
+  // ---------- Edit mode wiring ----------
+  function setEditTool(t) {
+    editTool = t;
+    $("editBrushBtn").classList.toggle("active", t === "brush");
+    $("editCropBtn").classList.toggle("active", t === "crop");
+    $("editBrushSizeRow").style.display = t === "brush" ? "" : "none";
+    $("editColorPalette").style.display = t === "brush" ? "" : "none";
+    $("editCropActions").style.display = t === "crop" ? "flex" : "none";
+    if (t !== "crop") { cropRect = null; cropDragging = false; }
+    render();
+  }
+  $("editBrushBtn").onclick = () => setEditTool("brush");
+  $("editCropBtn").onclick = () => setEditTool("crop");
+  $("rotateLeftBtn").onclick = () => rotateImage(-90);
+  $("rotateRightBtn").onclick = () => rotateImage(90);
+  $("confirmCropBtn").onclick = confirmCrop;
+  $("cancelCropBtn").onclick = cancelCrop;
+  $("editUndoBtn").onclick = () => $("undoBtn").click();
+  $("editSizeRange").oninput = (e) => {
+    editBrushSize = parseInt(e.target.value, 10);
+    $("editSizeVal").textContent = editBrushSize + "px";
+  };
+
+  // ---------- Load storage ----------
+  loadFromStorage();
 
   // ---------- Help sheet ----------
   const sheetMask=$("sheetMask");
