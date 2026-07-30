@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0f1115">
 <link rel="manifest" href="./app.webmanifest">
 <link rel="icon" href="./icon-192.png">
-<title>图片去水印工具</title>
+<title>图片去水印 & 添加水印工具</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -153,17 +153,80 @@
   .tip { font-size: 11px; color: var(--muted); line-height: 1.6; }
   .divider { height: 1px; background: var(--border); }
   input[type=file] { display: none; }
+  .mode-toggle {
+    display: flex;
+    gap: 6px;
+    background: var(--panel-2);
+    padding: 4px;
+    border-radius: 10px;
+    margin-bottom: 18px;
+  }
+  .mode-btn {
+    flex: 1;
+    padding: 8px;
+    border-radius: 8px;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all .15s;
+    font-family: inherit;
+  }
+  .mode-btn.active {
+    background: var(--accent);
+    color: #fff;
+    font-weight: 600;
+  }
+  .mode-btn:hover:not(.active) {
+    background: #2b303a;
+  }
+  textarea {
+    width: 100%;
+    min-height: 68px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    color: var(--text);
+    font-size: 13px;
+    font-family: inherit;
+    resize: none;
+  }
+  select {
+    width: 100%;
+    padding: 8px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 13px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  input[type=color] {
+    width: 100%;
+    height: 36px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--panel-2);
+    cursor: pointer;
+  }
 </style>
 </head>
 <body>
 <header>
-  <h1>🧽 图片去水印工具</h1>
-  <span class="hint">本地处理，图片不会上传 · 用画笔涂抹水印，再点击"去除水印"</span>
+  <h1>🖼 图片水印工具</h1>
+  <span class="hint">本地处理，图片不会上传 · 可去除水印或添加店铺名称</span>
   <button id="installBtn" style="display:none;flex:none;padding:8px 16px;">⬇ 安装到桌面</button>
 </header>
 <div class="main">
   <aside class="sidebar">
-    <div class="group">
+    <div class="mode-toggle">
+      <button class="mode-btn active" data-mode="remove">🧽 去除</button>
+      <button class="mode-btn" data-mode="add">➕ 添加</button>
+    </div>
+    <div class="group" data-mode="remove,add">
       <div class="group-title">文件</div>
       <div class="row">
         <button id="openBtn">📂 打开图片</button>
@@ -172,8 +235,8 @@
         <button id="saveBtn" disabled>💾 保存结果</button>
       </div>
     </div>
-    <div class="divider"></div>
-    <div class="group">
+    <div class="divider" data-mode="remove,add"></div>
+    <div class="group" data-mode="remove">
       <div class="group-title">工具</div>
       <div class="row">
         <button id="brushBtn" class="active" disabled>🖌 画笔</button>
@@ -186,8 +249,8 @@
         <button id="clearMaskBtn" disabled>清除涂抹</button>
       </div>
     </div>
-    <div class="divider"></div>
-    <div class="group">
+    <div class="divider" data-mode="remove"></div>
+    <div class="group" data-mode="remove">
       <div class="group-title">去水印</div>
       <label class="field" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;">
         <input type="checkbox" id="aiToggle" checked style="width:auto;accent-color:var(--accent);">
@@ -205,8 +268,68 @@
         <button id="resetBtn" disabled>⟲ 还原</button>
       </div>
     </div>
-    <div class="divider"></div>
-    <div class="group">
+    <div class="divider" data-mode="add"></div>
+    <div class="group" data-mode="add" style="display:none;">
+      <div class="group-title">文本设置</div>
+      <textarea id="watermarkText" placeholder="输入店铺名称（如：XX小店）"></textarea>
+      <label class="field">字体
+        <select id="fontSelect">
+          <option value="Microsoft YaHei">微软雅黑</option>
+          <option value="SimHei">黑体</option>
+          <option value="Arial">Arial</option>
+          <option value="Impact">Impact</option>
+        </select>
+      </label>
+      <label class="field">字号 <span class="val" id="fontSizeVal">48 px</span>
+        <input type="range" id="fontSizeRange" min="20" max="200" value="48">
+      </label>
+      <label class="field">颜色
+        <input type="color" id="textColorPicker" value="#ffffff">
+      </label>
+    </div>
+    <div class="divider" data-mode="add" style="display:none;"></div>
+    <div class="group" data-mode="add" style="display:none;">
+      <div class="group-title">外观</div>
+      <label class="field">透明度 <span class="val" id="opacityVal">80%</span>
+        <input type="range" id="opacityRange" min="0" max="100" value="80">
+      </label>
+      <label class="field" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="borderToggle" style="width:auto;accent-color:var(--accent);">
+        <span>描边</span>
+      </label>
+      <div id="borderControls" style="display:none;">
+        <label class="field">描边颜色
+          <input type="color" id="borderColorPicker" value="#000000">
+        </label>
+        <label class="field">描边宽度 <span class="val" id="borderWidthVal">2 px</span>
+          <input type="range" id="borderWidthRange" min="1" max="8" value="2">
+        </label>
+      </div>
+      <label class="field" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;margin-top:6px;">
+        <input type="checkbox" id="bgToggle" style="width:auto;accent-color:var(--accent);">
+        <span>背景</span>
+      </label>
+      <div id="bgControls" style="display:none;">
+        <label class="field">背景颜色
+          <input type="color" id="bgColorPicker" value="#000000">
+        </label>
+        <label class="field">背景透明度 <span class="val" id="bgOpacityVal">60%</span>
+          <input type="range" id="bgOpacityRange" min="0" max="100" value="60">
+        </label>
+      </div>
+    </div>
+    <div class="divider" data-mode="add" style="display:none;"></div>
+    <div class="group" data-mode="add" style="display:none;">
+      <div class="group-title">变换</div>
+      <label class="field">旋转 <span class="val" id="rotationVal">0°</span>
+        <input type="range" id="rotationRange" min="-45" max="45" value="0">
+      </label>
+      <div class="row">
+        <button id="resetPositionBtn">⟲ 重置居中</button>
+      </div>
+    </div>
+    <div class="divider" data-mode="remove"></div>
+    <div class="group" data-mode="remove">
       <div class="group-title">缩放</div>
       <div class="row">
         <button id="zoomOutBtn" disabled>−</button>
@@ -214,8 +337,8 @@
         <button id="zoomInBtn" disabled>+</button>
       </div>
     </div>
-    <div class="divider"></div>
-    <p class="tip">
+    <div class="divider" data-mode="remove"></div>
+    <p class="tip" data-mode="remove">
       使用步骤：<br>
       1. 打开图片（也可直接拖入或 Ctrl+V 粘贴）<br>
       2. 用画笔把水印涂成红色<br>
@@ -253,12 +376,33 @@
 
   let hasImage = false;
   let scale = 1;            // display scale (view px per image px)
+  let appMode = "remove";   // "remove" | "add"
   let tool = "brush";       // "brush" | "eraser"
   let brushSize = 30;       // in image pixels
   let drawing = false;
   let lastPt = null;
   const undoStack = [];     // ImageData snapshots of workCanvas
   const MAX_UNDO = 12;
+
+  // Text watermark state
+  let textWatermark = {
+    text: "",
+    x: 0,
+    y: 0,
+    fontSize: 48,
+    fontFamily: "Microsoft YaHei",
+    color: "#ffffff",
+    opacity: 0.8,
+    rotation: 0,
+    hasBorder: false,
+    borderColor: "#000000",
+    borderWidth: 2,
+    hasBackground: false,
+    backgroundColor: "#000000",
+    backgroundOpacity: 0.6
+  };
+  let isDraggingText = false;
+  let dragOffset = { x: 0, y: 0 };
 
   // ---------- Elements ----------
   const $ = (id) => document.getElementById(id);
@@ -294,6 +438,26 @@
     canvasWrap.style.display = "block";
     setEnabled(true);
     $("undoBtn").disabled = true;
+
+    // Reset text watermark
+    textWatermark = {
+      text: "",
+      x: 0,
+      y: 0,
+      fontSize: 48,
+      fontFamily: "Microsoft YaHei",
+      color: "#ffffff",
+      opacity: 0.8,
+      rotation: 0,
+      hasBorder: false,
+      borderColor: "#000000",
+      borderWidth: 2,
+      hasBackground: false,
+      backgroundColor: "#000000",
+      backgroundOpacity: 0.6
+    };
+    if ($("watermarkText")) $("watermarkText").value = "";
+
     fitToStage();
     render();
   }
@@ -315,12 +479,59 @@
   }
 
   // ---------- Rendering ----------
+  function renderTextWatermark(ctx, scale) {
+    if (appMode !== "add" || !textWatermark.text.trim()) return;
+
+    ctx.save();
+    ctx.translate(textWatermark.x, textWatermark.y);
+    ctx.rotate(textWatermark.rotation * Math.PI / 180);
+
+    const fontSize = textWatermark.fontSize;
+    ctx.font = `${fontSize}px "${textWatermark.fontFamily}", sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    const metrics = ctx.measureText(textWatermark.text);
+    const textWidth = metrics.width;
+    const textHeight = fontSize * 1.2;
+
+    // 绘制背景
+    if (textWatermark.hasBackground) {
+      ctx.globalAlpha = textWatermark.backgroundOpacity;
+      ctx.fillStyle = textWatermark.backgroundColor;
+      const padX = textWidth * 0.2;
+      const padY = textHeight * 0.1;
+      ctx.fillRect(-textWidth/2 - padX, -textHeight/2 - padY,
+                   textWidth + padX*2, textHeight + padY*2);
+    }
+
+    // 绘制描边
+    ctx.globalAlpha = textWatermark.opacity;
+    if (textWatermark.hasBorder) {
+      ctx.strokeStyle = textWatermark.borderColor;
+      ctx.lineWidth = textWatermark.borderWidth;
+      ctx.lineJoin = "round";
+      ctx.strokeText(textWatermark.text, 0, 0);
+    }
+
+    // 绘制文字
+    ctx.fillStyle = textWatermark.color;
+    ctx.fillText(textWatermark.text, 0, 0);
+
+    ctx.restore();
+  }
+
   function render() {
     viewCtx.clearRect(0, 0, view.width, view.height);
     viewCtx.drawImage(workCanvas, 0, 0);
-    viewCtx.globalAlpha = 0.55;
-    viewCtx.drawImage(maskCanvas, 0, 0);
-    viewCtx.globalAlpha = 1;
+
+    if (appMode === "remove") {
+      viewCtx.globalAlpha = 0.55;
+      viewCtx.drawImage(maskCanvas, 0, 0);
+      viewCtx.globalAlpha = 1;
+    } else if (appMode === "add") {
+      renderTextWatermark(viewCtx, 1);
+    }
   }
   // ---------- Coordinate mapping ----------
   function toImageCoords(e) {
@@ -328,6 +539,24 @@
     const x = (e.clientX - rect.left) / rect.width * workCanvas.width;
     const y = (e.clientY - rect.top) / rect.height * workCanvas.height;
     return { x, y };
+  }
+
+  // ---------- Text hit detection ----------
+  function isPointInText(px, py) {
+    if (appMode !== "add" || !textWatermark.text.trim()) return false;
+
+    const tempCanvas = document.createElement("canvas");
+    const tempCtx = tempCanvas.getContext("2d");
+    tempCtx.font = `${textWatermark.fontSize}px "${textWatermark.fontFamily}", sans-serif`;
+    const metrics = tempCtx.measureText(textWatermark.text);
+    const textWidth = metrics.width;
+    const textHeight = textWatermark.fontSize * 1.2;
+
+    const halfW = textWidth / 2;
+    const halfH = textHeight / 2;
+
+    return px >= textWatermark.x - halfW && px <= textWatermark.x + halfW &&
+           py >= textWatermark.y - halfH && py <= textWatermark.y + halfH;
   }
 
   // ---------- Painting the mask ----------
@@ -360,26 +589,56 @@
     if (!hasImage) return;
     e.preventDefault();
     view.setPointerCapture(e.pointerId);
-    drawing = true;
-    lastPt = null;
+
     const p = toImageCoords(e);
-    strokeTo(p.x, p.y);
-    render();
+
+    if (appMode === "add") {
+      if (isPointInText(p.x, p.y)) {
+        isDraggingText = true;
+        dragOffset.x = p.x - textWatermark.x;
+        dragOffset.y = p.y - textWatermark.y;
+        view.style.cursor = "grabbing";
+      }
+    } else {
+      drawing = true;
+      lastPt = null;
+      strokeTo(p.x, p.y);
+      render();
+    }
   });
   view.addEventListener("pointermove", (e) => {
-    updateCursor(e);
-    if (!drawing) return;
     const p = toImageCoords(e);
-    strokeTo(p.x, p.y);
-    render();
+
+    if (appMode === "add") {
+      if (isDraggingText) {
+        textWatermark.x = p.x - dragOffset.x;
+        textWatermark.y = p.y - dragOffset.y;
+        render();
+      } else if (hasImage) {
+        view.style.cursor = isPointInText(p.x, p.y) ? "grab" : "default";
+      }
+    } else {
+      updateCursor(e);
+      if (drawing) {
+        strokeTo(p.x, p.y);
+        render();
+      }
+    }
   });
-  const endStroke = () => { drawing = false; lastPt = null; };
+  const endStroke = () => {
+    drawing = false;
+    lastPt = null;
+    isDraggingText = false;
+    if (appMode === "add" && hasImage) {
+      view.style.cursor = "default";
+    }
+  };
   view.addEventListener("pointerup", endStroke);
   view.addEventListener("pointercancel", endStroke);
 
   // ---------- Brush cursor ----------
   function updateCursor(e) {
-    if (!hasImage) { brushCursor.style.display = "none"; return; }
+    if (!hasImage || appMode === "add") { brushCursor.style.display = "none"; return; }
     const d = brushSize * scale;
     brushCursor.style.display = "block";
     brushCursor.style.width = d + "px";
@@ -673,6 +932,21 @@
     }
   }
   // ---------- Toolbar wiring ----------
+  function setMode(mode) {
+    appMode = mode;
+    document.querySelectorAll(".mode-btn").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.mode === mode);
+    });
+    document.querySelectorAll("[data-mode]").forEach(el => {
+      const modes = el.dataset.mode.split(",");
+      el.style.display = modes.includes(mode) ? "" : "none";
+    });
+    if (hasImage) {
+      view.style.cursor = mode === "add" ? "default" : "crosshair";
+    }
+    render();
+  }
+
   function setTool(t) {
     tool = t;
     $("brushBtn").classList.toggle("active", t === "brush");
@@ -680,6 +954,11 @@
   }
   $("brushBtn").onclick = () => setTool("brush");
   $("eraserBtn").onclick = () => setTool("eraser");
+
+  // Mode toggle
+  document.querySelectorAll(".mode-btn").forEach(btn => {
+    btn.onclick = () => setMode(btn.dataset.mode);
+  });
 
   $("sizeRange").oninput = (e) => {
     brushSize = parseInt(e.target.value, 10);
@@ -699,6 +978,84 @@
     const v = $("clarityRange") ? $("clarityRange").value : "3";
     return clarityMaxSide[v] || 1536;
   }
+
+  // Text watermark controls
+  $("watermarkText").oninput = (e) => {
+    textWatermark.text = e.target.value;
+    if (textWatermark.text && textWatermark.x === 0 && textWatermark.y === 0) {
+      textWatermark.x = workCanvas.width / 2;
+      textWatermark.y = workCanvas.height / 2;
+    }
+    render();
+  };
+
+  $("fontSelect").onchange = (e) => {
+    textWatermark.fontFamily = e.target.value;
+    render();
+  };
+
+  $("fontSizeRange").oninput = (e) => {
+    textWatermark.fontSize = parseInt(e.target.value, 10);
+    $("fontSizeVal").textContent = textWatermark.fontSize + " px";
+    render();
+  };
+
+  $("textColorPicker").oninput = (e) => {
+    textWatermark.color = e.target.value;
+    render();
+  };
+
+  $("opacityRange").oninput = (e) => {
+    textWatermark.opacity = parseInt(e.target.value, 10) / 100;
+    $("opacityVal").textContent = e.target.value + "%";
+    render();
+  };
+
+  $("borderToggle").onchange = (e) => {
+    textWatermark.hasBorder = e.target.checked;
+    $("borderControls").style.display = e.target.checked ? "" : "none";
+    render();
+  };
+
+  $("borderColorPicker").oninput = (e) => {
+    textWatermark.borderColor = e.target.value;
+    render();
+  };
+
+  $("borderWidthRange").oninput = (e) => {
+    textWatermark.borderWidth = parseInt(e.target.value, 10);
+    $("borderWidthVal").textContent = e.target.value + " px";
+    render();
+  };
+
+  $("bgToggle").onchange = (e) => {
+    textWatermark.hasBackground = e.target.checked;
+    $("bgControls").style.display = e.target.checked ? "" : "none";
+    render();
+  };
+
+  $("bgColorPicker").oninput = (e) => {
+    textWatermark.backgroundColor = e.target.value;
+    render();
+  };
+
+  $("bgOpacityRange").oninput = (e) => {
+    textWatermark.backgroundOpacity = parseInt(e.target.value, 10) / 100;
+    $("bgOpacityVal").textContent = e.target.value + "%";
+    render();
+  };
+
+  $("rotationRange").oninput = (e) => {
+    textWatermark.rotation = parseInt(e.target.value, 10);
+    $("rotationVal").textContent = e.target.value + "°";
+    render();
+  };
+
+  $("resetPositionBtn").onclick = () => {
+    textWatermark.x = workCanvas.width / 2;
+    textWatermark.y = workCanvas.height / 2;
+    render();
+  };
 
   $("clearMaskBtn").onclick = () => {
     maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
@@ -737,10 +1094,28 @@
 
   // ---------- Save ----------
   $("saveBtn").onclick = () => {
-    workCanvas.toBlob((blob) => {
+    let finalCanvas = workCanvas;
+
+    if (appMode === "add" && textWatermark.text.trim()) {
+      // 创建合成画布
+      const composite = document.createElement("canvas");
+      composite.width = workCanvas.width;
+      composite.height = workCanvas.height;
+      const ctx = composite.getContext("2d");
+
+      // 绘制底图
+      ctx.drawImage(workCanvas, 0, 0);
+
+      // 绘制文本水印（全分辨率）
+      renderTextWatermark(ctx, 1);
+
+      finalCanvas = composite;
+    }
+
+    finalCanvas.toBlob((blob) => {
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = "去水印_" + Date.now() + ".png";
+      a.download = (appMode === "add" ? "加水印_" : "去水印_") + Date.now() + ".png";
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     }, "image/png");
