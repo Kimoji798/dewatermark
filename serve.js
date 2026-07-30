@@ -10,10 +10,13 @@ const ROOT = __dirname;
 const TYPES = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".webmanifest": "application/manifest+json; charset=utf-8",
   ".png": "image/png",
   ".ico": "image/x-icon",
+  ".wasm": "application/wasm",
+  ".onnx": "application/octet-stream",
 };
 
 const server = http.createServer((req, res) => {

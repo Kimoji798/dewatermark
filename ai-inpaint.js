@@ -15,9 +15,10 @@ const AIInpaint = (function () {
 
   // ============ 可配置区（地址失效时改这里） ============
   const CONFIG = {
-    // onnxruntime-web 运行时（含 wasm）。用 jsDelivr CDN（有 CORS + 国内节点）。
-    ortScript: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js",
-    wasmPaths: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/",
+    // onnxruntime-web 运行时（含 wasm）。本地同源加载，完全离线可用。
+    // 备用 CDN（如需切回联网）：https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/
+    ortScript: "./vendor/ort/ort.min.js",
+    wasmPaths: "./vendor/ort/",
 
     // MI-GAN inpainting 模型（migan_pipeline_v2.onnx，约 28MB，内置前后处理）。
     // 已放进本仓库，同源加载 —— 不再有 CORS/跨域问题，国内可直连 GitHub Pages。
