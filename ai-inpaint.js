@@ -70,7 +70,11 @@ const AIInpaint = (function () {
         await loadScript(CONFIG.ortScript);
       }
       if (typeof self.ort === "undefined") throw new Error("onnxruntime 未能加载");
-      self.ort.env.wasm.wasmPaths = CONFIG.wasmPaths;
+      // 关键：解析成绝对 URL。iOS Safari 在 classic script 里用 import() 加载
+      // .mjs 时会按脚本自身位置而非 document.baseURI 解析相对路径，导致
+      // "Importing a module script failed"。用 new URL(..., location.href).href
+      // 生成绝对 URL 可以完全避开这个陷阱。
+      self.ort.env.wasm.wasmPaths = new URL(CONFIG.wasmPaths, self.location.href).href;
       // 关键：GitHub Pages 等静态托管无法设置 COOP/COEP 响应头，
       // 因此 SharedArrayBuffer 不可用，多线程 wasm 会初始化失败。
       // 只有页面确实处于跨域隔离状态时才启用多线程，否则强制单线程。
