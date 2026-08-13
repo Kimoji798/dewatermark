@@ -1,0 +1,15 @@
+# Claude 的私人记忆(含个人信息,不要推到 GitHub)
+.claude-memory/
+
+# 批量处理的测试输出
+加水印_*.png
+去水印_*.png
+编辑_*.png
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 编辑器
+.vscode/
+.idea/
