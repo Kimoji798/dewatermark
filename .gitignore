@@ -11,6 +11,9 @@
 .DS_Store
 Thumbs.db
 
+# 豆包水印测试样图(用户私人图片,仅本地参考)
+doubaoAI.jpg
+
 # 编辑器
 .vscode/
 .idea/

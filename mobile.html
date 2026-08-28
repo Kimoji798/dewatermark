@@ -358,24 +358,88 @@
   }
   .btn-full.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
   .sheet-scroll { max-height: 65vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  /* ---------- 工具栏收起/展开 ---------- */
+  #toolbarHandle {
+    display: none;
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    text-align: center;
+    padding: 3px 0 calc(3px + var(--safe-b));
+    z-index: 20;
+  }
+  #toolbarHandle .chev {
+    display: inline-block;
+    font-size: 13px;
+    color: var(--muted);
+    padding: 4px 24px;
+    line-height: 1;
+  }
+  body.toolbarCollapsed .toolbar { display: none !important; }
+  /* ---------- 关闭当前图片 ---------- */
+  .close-img {
+    position: absolute;
+    top: 12px; left: 12px;
+    z-index: 15;
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: rgba(0,0,0,.55);
+    border: 1px solid var(--border);
+    color: #fff;
+    font-size: 15px;
+    line-height: 1;
+    display: none;
+  }
+  /* ---------- 画笔/橡皮可视化圆环 ---------- */
+  #brushCursor {
+    position: fixed;
+    left: 0; top: 0;
+    display: none;
+    border: 2px solid rgba(255,255,255,.9);
+    border-radius: 50%;
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    mix-blend-mode: difference;
+    z-index: 50;
+  }
+  /* ---------- Toast 消息 ---------- */
+  #toast {
+    position: fixed;
+    left: 50%;
+    bottom: calc(130px + var(--safe-b));
+    transform: translateX(-50%);
+    background: rgba(0,0,0,.85);
+    border: 1px solid var(--border);
+    color: #fff;
+    font-size: 13px;
+    padding: 10px 18px;
+    border-radius: 999px;
+    z-index: 60;
+    opacity: 0;
+    transition: opacity .25s;
+    pointer-events: none;
+    max-width: 85vw;
+    text-align: center;
+    display: none;
+  }
+  #toast.show { opacity: 1; }
+  .drop .big.doubao { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
 </style>
 </head>
 <body>
 <div class="topbar">
-  <div class="mode-tabs">
-    <button class="mode-tab active" data-mode="remove">🧽 去除</button>
-    <button class="mode-tab" data-mode="add">➕ 添加</button>
-    <button class="mode-tab" data-mode="edit">✏ 编辑</button>
+  <div class="mode-tabs" id="modeTabs">
+    <button class="mode-tab active" data-mode="remove" title="去除水印">🧽</button>
+    <button class="mode-tab" data-mode="add" title="添加水印">➕</button>
+    <button class="mode-tab" data-mode="edit" title="编辑图片">✏️</button>
   </div>
   <button class="icon-btn" id="installBtn" style="display:none;">安装</button>
-  <button class="icon-btn" id="helpBtn">?</button>
-  <button class="icon-btn" id="openBtn">打开</button>
+  <button class="icon-btn" id="helpBtn" title="使用帮助">?</button>
   <select id="saveFormat" class="icon-btn" style="padding:8px 6px;font-size:12px;max-width:66px;flex:none;" title="保存格式">
     <option value="png">PNG</option>
     <option value="jpeg">JPG</option>
     <option value="webp">WebP</option>
   </select>
-  <button class="icon-btn primary" id="saveBtn" disabled>保存</button>
+  <button class="icon-btn primary" id="saveBtn" disabled title="保存图片">💾</button>
 </div>
 
 <div class="stage" id="stage">
@@ -387,6 +451,7 @@
     <h2>选择要去水印的图片</h2>
     <p>从相册选择一张图片<br>全程在手机本地处理，不会上传</p>
     <button class="big" id="pickBtn">🖼 从相册选择</button>
+    <button class="big doubao" id="doubaoBtn">🧿 清除豆包AI水印</button>
   </div>
   <div class="mode-hint" id="modeHint" style="display:none;"><b>单指</b>涂抹水印 · <b>双指</b>缩放/移动</div>
   <div class="status" id="status">
@@ -394,7 +459,12 @@
     <div id="statusText">正在去除水印…</div>
   </div>
   <button class="fab" id="compareBtn" disabled>↔ 对比原图</button>
+  <button class="close-img" id="closeImgBtn" title="关闭当前图片">✕</button>
+  <div id="brushCursor"></div>
+  <div id="toast"></div>
 </div>
+
+<div id="toolbarHandle" style="display:none;"><span class="chev">⌄</span></div>
 
 <!-- Remove mode toolbar -->
 <div class="toolbar active" data-mode="remove">
@@ -464,6 +534,12 @@
     <button class="tool" id="confirmCropBtn" disabled style="flex:1;">✓ 确认裁剪</button>
     <button class="tool" id="cancelCropBtn" disabled style="flex:1;">取消</button>
   </div>
+</div>
+
+<!-- Doubao watermark mode toolbar -->
+<div class="toolbar" data-mode="doubao" id="doubaoToolbar">
+  <div style="font-size:12px;color:var(--muted);line-height:1.5;">已识别到右下角「豆包AI生成」水印，红色区域已自动选中</div>
+  <button class="go-btn" id="doubaoInpaintBtn">✨ 去除水印</button>
 </div>
 
 <div class="sheet-mask" id="sheetMask">
@@ -598,6 +674,7 @@
 <input type="file" id="batchFileInput" accept="image/*" multiple>
 <script src="./ai-inpaint.js"></script>
 <script src="./auto-cut.js"></script>
+<script src="./doubao-detect.js"></script>
 <script>
 "use strict";
 (function () {
@@ -651,6 +728,10 @@
   let autoRegionW = 0, autoRegionH = 0;
   let autoBusy = false;
   let autoStatusTimer = 0;
+  // 豆包AI水印模式:检测到水印后锁定为专用工具栏
+  let doubaoMode = false;
+  let doubaoPickPending = false;
+  let toastTimer = 0;
 
   const controls = ["saveBtn","compareBtn","brushBtn","eraserBtn","autoBtn","undoBtn","clearBtn","resetBtn","inpaintBtn",
     "editBrushBtn","editEraserBtn","editCropBtn","rotateLeftBtn","rotateRightBtn",
@@ -750,6 +831,20 @@
 
   function showStatus(t) { statusText.textContent = t; status.classList.add("show"); }
   function hideStatus() { status.classList.remove("show"); statusText.textContent = ""; }
+  function showToast(msg) {
+    const t = $("toast");
+    if (!t) return;
+    t.textContent = msg;
+    t.style.display = "block";
+    t.classList.remove("show");
+    void t.offsetWidth;
+    t.classList.add("show");
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      t.classList.remove("show");
+      setTimeout(() => { if (!t.classList.contains("show")) t.style.display = "none"; }, 300);
+    }, 2200);
+  }
 
   // ---------- Load ----------
   function loadImage(src) {
@@ -777,6 +872,10 @@
     hasImage = true;
     drop.style.display = "none";
     wrap.style.display = "block";
+    $("closeImgBtn").style.display = "block";
+    $("toolbarHandle").style.display = "block";
+    document.body.classList.remove("toolbarCollapsed");
+    exitDoubaoMode();
     modeHint.style.display = "block";
     setEnabled(true);
     $("undoBtn").disabled = true;
@@ -1093,6 +1192,22 @@
     pendingId = null;
   }
 
+  // 画笔/橡皮可视圆环(跟随手指,直径=笔刷大小*缩放)
+  function updateBrushCursor(clientX, clientY) {
+    const bc = $("brushCursor");
+    if (!bc) return;
+    const active = hasImage && !doubaoMode && !compareOn && pointers.size === 1 &&
+      ((appMode === "remove" && (tool === "brush" || tool === "eraser")) ||
+       (appMode === "edit" && (editTool === "brush" || editTool === "eraser")));
+    if (!active) { bc.style.display = "none"; return; }
+    const size = appMode === "edit" ? editBrushSize : brushSize;
+    const d = Math.max(4, size * zoom);
+    bc.style.display = "block";
+    bc.style.width = bc.style.height = d + "px";
+    bc.style.left = clientX + "px";
+    bc.style.top = clientY + "px";
+  }
+
   stage.addEventListener("pointerdown", (e) => {
     if (!hasImage) return;
     stage.setPointerCapture(e.pointerId);
@@ -1111,6 +1226,7 @@
           gesture = "draw";
           const pt = pointers.get(pendingId);
           if (!pt) return;
+          if (doubaoMode) { gesture = "none"; return; } // 豆包模式只允许缩放,禁止涂抹
           const p = toImage(pt.x, pt.y);
           // 对比模式下开始涂抹/裁剪就自动退出,避免误画
           if (compareOn && appMode !== "add") setCompare(false);
@@ -1169,8 +1285,9 @@
   stage.addEventListener("pointermove", (e) => {
     if (!pointers.has(e.pointerId)) return;
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    updateBrushCursor(e.clientX, e.clientY);
 
-    if (gesture === "draw" && pointers.size === 1) {
+    if (gesture === "draw" && pointers.size === 1 && !doubaoMode) {
       const p = toImage(e.clientX, e.clientY);
       if (appMode === "remove") {
         if (tool === "auto") {
@@ -1214,6 +1331,7 @@
     // 若在待确认期间就抬起（快速点一下）
     if (gesture === "pending" && e.pointerId === pendingId) {
       clearPending();
+      if (!doubaoMode) {
       const p = toImage(e.clientX, e.clientY);
       if (appMode === "remove") {
         if (tool === "auto") {
@@ -1234,6 +1352,7 @@
           editStamp(p.x, p.y); render();
         }
       }
+      }
     }
     // 结束拖拽/裁剪
     isDraggingText = false;
@@ -1248,7 +1367,7 @@
       $("confirmCropBtn").disabled = !valid;
       $("cancelCropBtn").disabled = !valid;
     }
-    if (pointers.size === 0) { gesture = "none"; clearPending(); }
+    if (pointers.size === 0) { gesture = "none"; clearPending(); $("brushCursor").style.display = "none"; }
     else if (pointers.size === 1) { gesture = "none"; }
   }
   stage.addEventListener("pointerup", endPointer);
@@ -1510,12 +1629,17 @@
     runInpaint(quality);
     maskCtx.clearRect(0,0,maskCanvas.width,maskCanvas.height);
     clearAuto();
+    if (doubaoMode) showToast("豆包水印已去除");
     render();
   }
 
   async function doInpaint() {
     if (!hasImage) return;
-    if (maskIsEmpty()) { alert("请先用手指涂抹要去除的水印区域。"); return; }
+    if (maskIsEmpty()) {
+      if (doubaoMode) { showToast("豆包水印已去除"); return; }
+      alert("请先用手指涂抹要去除的水印区域。");
+      return;
+    }
     const quality=3; // 强度固定为最高档 = 最精细
     const useAI = $("aiToggle") && $("aiToggle").checked && typeof AIInpaint !== "undefined";
 
@@ -1542,6 +1666,7 @@
       clearAuto();
       render();
       hideStatus();
+      if (doubaoMode) { $("doubaoInpaintBtn").disabled = true; showToast("豆包水印已去除"); }
     } catch(err) {
       console.error("AI 失败，回退：", err);
       showStatus("AI 不可用，改用快速修复…");
@@ -1566,6 +1691,7 @@
     $("autoPanel").style.display = t==="auto" ? "flex" : "none";
     $("brushSizeRow").style.display = t==="auto" ? "none" : "";
     if (t==="auto") setCompare(false);
+    $("brushCursor").style.display = "none";
     render();
   }
   $("brushBtn").onclick = () => setTool("brush");
@@ -1819,6 +1945,42 @@
     render();
   };
 
+  // ---------- 关闭当前图片(回到初始页) ----------
+  function deleteImage() {
+    if (!hasImage) return;
+    if (!confirm("关闭当前图片，回到初始页面？")) return;
+    hasImage = false;
+    setCompare(false);
+    clearAuto();
+    undoStack.length = 0;
+    textWatermarks = [];
+    selectedWatermarkIndex = -1;
+    cropRect = null; cropDragging = false;
+    if ($("confirmCropBtn")) $("confirmCropBtn").disabled = true;
+    if ($("cancelCropBtn")) $("cancelCropBtn").disabled = true;
+    maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+    exitDoubaoMode();
+    drop.style.display = "flex";
+    wrap.style.display = "none";
+    $("closeImgBtn").style.display = "none";
+    $("toolbarHandle").style.display = "none";
+    document.body.classList.remove("toolbarCollapsed");
+    modeHint.style.display = "none";
+    setEnabled(false);
+    $("undoBtn").disabled = true;
+    if ($("editUndoBtn")) $("editUndoBtn").disabled = true;
+    $("brushCursor").style.display = "none";
+    render();
+  }
+  $("closeImgBtn").onclick = deleteImage;
+
+  // ---------- 工具栏收起/展开 ----------
+  $("toolbarHandle").onclick = () => {
+    const collapsed = document.body.classList.toggle("toolbarCollapsed");
+    $("toolbarHandle").querySelector(".chev").textContent = collapsed ? "⌃" : "⌄";
+    setTimeout(fitView, 80); // 等布局完成后重新居中图片
+  };
+
   // ---------- Save ----------
   function getSaveFormat() {
     const f = $("saveFormat") ? $("saveFormat").value : "png";
@@ -1868,9 +2030,88 @@
 
   // ---------- File input ----------
   const fileInput=$("fileInput");
-  const pick=()=>fileInput.click();
-  $("openBtn").onclick=pick; $("pickBtn").onclick=pick;
-  fileInput.onchange=(e)=>{ const f=e.target.files[0]; if (f) loadImage(URL.createObjectURL(f)); fileInput.value=""; };
+  const pick=()=>{ doubaoPickPending=false; fileInput.click(); };
+  $("pickBtn").onclick=pick;
+  $("doubaoBtn").onclick=()=>{ doubaoPickPending=true; fileInput.click(); };
+  fileInput.onchange=(e)=>{
+    const f=e.target.files[0];
+    fileInput.value="";
+    if (!f) return;
+    if (doubaoPickPending) { handleDoubaoPick(f); }
+    else loadImage(URL.createObjectURL(f));
+  };
+
+  // ---------- 豆包AI水印 ----------
+  function handleDoubaoPick(file) {
+    doubaoPickPending = false;
+    if (typeof Doubao === "undefined") { showToast("豆包检测组件加载失败"); return; }
+    showStatus("正在检测豆包水印…");
+    Doubao.detectFromFile(file).then((r) => {
+      hideStatus();
+      if (r && r.found) {
+        loadDoubaoImage(file, r);
+      } else {
+        showToast("未识别到豆包水印");
+      }
+    });
+  }
+  function loadDoubaoImage(file, r) {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      setupImage(img);
+      // r 坐标基于原图分辨率,换算到降采样后的工作分辨率
+      const longest = Math.max(img.naturalWidth, img.naturalHeight);
+      const k = longest > MAX_SIDE ? MAX_SIDE / longest : 1;
+      enterDoubaoMode({ x: r.x * k, y: r.y * k, w: r.w * k, h: r.h * k, mask: r.mask });
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); alert("无法加载该图片"); };
+    img.src = url;
+  }
+  function enterDoubaoMode(bbox) {
+    doubaoMode = true;
+    $("doubaoInpaintBtn").disabled = false;
+    maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+    if (bbox && bbox.mask && bbox.mask.width) {
+      // 只把检测到的白色笔画涂成红色(和画笔同色),不是整个框涂满
+      const mc = document.createElement("canvas");
+      mc.width = bbox.mask.width;
+      mc.height = bbox.mask.height;
+      const mctx = mc.getContext("2d");
+      mctx.drawImage(bbox.mask, 0, 0);
+      mctx.globalCompositeOperation = "source-in";
+      mctx.fillStyle = "#ff3b3b";
+      mctx.fillRect(0, 0, mc.width, mc.height);
+      maskCtx.drawImage(mc, 0, 0, maskCanvas.width, maskCanvas.height);
+    } else {
+      // 兜底:用水印外框涂满
+      const px = Math.max(6, bbox.w * 0.06), py = Math.max(6, bbox.h * 0.10);
+      const x = Math.max(0, Math.floor(bbox.x - px));
+      const y = Math.max(0, Math.floor(bbox.y - py));
+      const w = Math.min(maskCanvas.width - x, Math.ceil(bbox.w + px * 2));
+      const h = Math.min(maskCanvas.height - y, Math.ceil(bbox.h + py * 2));
+      maskCtx.fillStyle = "#ff3b3b";
+      maskCtx.fillRect(x, y, w, h);
+    }
+    // 锁定为豆包专用界面:隐藏模式切换和默认工具栏
+    $("modeTabs").style.display = "none";
+    document.querySelectorAll(".toolbar[data-mode]").forEach(t => t.classList.remove("active"));
+    $("doubaoToolbar").classList.add("active");
+    setTool("brush");
+    setCompare(false);
+    showToast("已识别到豆包水印，点「去除水印」清除");
+    render();
+  }
+  function exitDoubaoMode() {
+    if (!doubaoMode) return;
+    doubaoMode = false;
+    $("modeTabs").style.display = "";
+    $("doubaoToolbar").classList.remove("active");
+    document.querySelectorAll(".toolbar[data-mode]").forEach(t =>
+      t.classList.toggle("active", t.dataset.mode === appMode));
+  }
+  $("doubaoInpaintBtn").onclick = doInpaint;
 
   window.addEventListener("paste",(e)=>{
     const items=e.clipboardData&&e.clipboardData.items; if(!items) return;
@@ -2388,4 +2629,3 @@ if ("serviceWorker" in navigator) {
 
 </body>
 </html>
-
