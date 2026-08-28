@@ -401,14 +401,26 @@
   <div class="tools-row">
     <button class="tool active" id="brushBtn" disabled><span class="ic">🖌</span>画笔</button>
     <button class="tool" id="eraserBtn" disabled><span class="ic">🧹</span>擦除</button>
+    <button class="tool" id="autoBtn" disabled><span class="ic">🎯</span>智能</button>
     <button class="tool" id="undoBtn" disabled><span class="ic">↶</span>撤销</button>
     <button class="tool" id="clearBtn" disabled><span class="ic">✕</span>清涂</button>
     <button class="tool" id="resetBtn" disabled><span class="ic">⟲</span>还原</button>
   </div>
-  <div class="slider-row">
+  <div class="slider-row" id="brushSizeRow">
     <label>笔刷</label>
     <input type="range" id="sizeRange" min="6" max="140" value="40">
     <span class="v" id="sizeVal">40px</span>
+  </div>
+  <div id="autoPanel" style="display:none;flex-direction:column;gap:12px;">
+    <div class="tools-row">
+      <button class="tool active" id="autoRectBtn"><span class="ic">▭</span>矩形</button>
+      <button class="tool" id="autoEllipseBtn"><span class="ic">◯</span>圆形</button>
+      <button class="tool" id="autoLassoBtn"><span class="ic">✎</span>套索</button>
+    </div>
+    <div class="tools-row">
+      <button class="tool" id="autoClearBtn" disabled><span class="ic">✕</span>清除</button>
+      <button class="tool" id="autoApplyBtn" disabled style="flex:1;background:var(--accent);color:#fff;border:none;font-weight:700;">✨ 消除选中</button>
+    </div>
   </div>
   <label class="slider-row" style="gap:8px;cursor:pointer;">
     <input type="checkbox" id="aiToggle" checked style="width:20px;height:20px;accent-color:var(--accent);flex:none;">
@@ -588,6 +600,7 @@
 <input type="file" id="fileInput" accept="image/*">
 <input type="file" id="batchFileInput" accept="image/*" multiple>
 <script src="./ai-inpaint.js"></script>
+<script src="./auto-cut.js"></script>
 <script>
 "use strict";
 (function () {
@@ -634,8 +647,16 @@
   let cropRect = null;
   let cropStart = null;
   let cropDragging = false;
+  // 智能抠除:框选小范围后自动识别物体边界
+  let autoShape = "rect";        // "rect" | "ellipse" | "lasso"
+  let autoRegion = null;         // 绘制中的框选 {shape,startX,startY,curX,curY,pts}
+  let autoCandidates = [];       // 识别结果 [{x,y,w,h,mask,regionX,regionY,overlayCanvas,fillCanvas,selected}]
+  let autoSelectedCount = 0;
+  let autoRegionW = 0, autoRegionH = 0;
+  let autoBusy = false;
+  let autoStatusTimer = 0;
 
-  const controls = ["saveBtn","compareBtn","brushBtn","eraserBtn","undoBtn","clearBtn","resetBtn","inpaintBtn",
+  const controls = ["saveBtn","compareBtn","brushBtn","eraserBtn","autoBtn","undoBtn","clearBtn","resetBtn","inpaintBtn",
     "editBrushBtn","editEraserBtn","editCropBtn","rotateLeftBtn","rotateRightBtn",
     "libraryBtn","templatesBtn"];
   const setEnabled = (on) => controls.forEach(id => { const el=$(id); if (el) el.disabled = !on; });
@@ -732,7 +753,7 @@
   function getSelectedWatermark(){ return textWatermarks[selectedWatermarkIndex] || null; }
 
   function showStatus(t) { statusText.textContent = t; status.classList.add("show"); }
-  function hideStatus() { status.classList.remove("show"); }
+  function hideStatus() { status.classList.remove("show"); statusText.textContent = ""; }
 
   // ---------- Load ----------
   function loadImage(src) {
@@ -756,6 +777,7 @@
     setCompare(false);
     maskCtx.clearRect(0,0,w,h);
     undoStack.length = 0;
+    clearAuto();
     hasImage = true;
     drop.style.display = "none";
     wrap.style.display = "block";
@@ -853,6 +875,7 @@
       viewCtx.globalAlpha = 0.55;
       viewCtx.drawImage(maskCanvas,0,0);
       viewCtx.globalAlpha = 1;
+      if (tool === "auto") drawAutoOverlay(viewCtx);
     } else if (appMode === "add") {
       textWatermarks.forEach(wm => renderTextWatermark(viewCtx, wm));
     } else if (appMode === "edit" && cropRect && cropRect.w > 0 && cropRect.h > 0) {
@@ -1096,7 +1119,19 @@
           // 对比模式下开始涂抹/裁剪就自动退出,避免误画
           if (compareOn && appMode !== "add") setCompare(false);
           if (appMode === "remove") {
-            strokeTo(p.x, p.y); render();
+            if (tool === "auto") {
+              if (autoBusy) return;
+              if (autoCandidates.length) {
+                const hit = hitTestCandidates(p.x, p.y);
+                if (hit >= 0) { toggleCandidate(hit); return; }
+              }
+              clearAuto();
+              autoRegion = {
+                shape: autoShape, startX: p.x, startY: p.y, curX: p.x, curY: p.y,
+                pts: autoShape === "lasso" ? [{ x: p.x, y: p.y }] : null,
+              };
+              render();
+            } else { strokeTo(p.x, p.y); render(); }
           } else if (appMode === "add") {
             const idx = hitTestWatermarks(p.x, p.y);
             if (idx >= 0) {
@@ -1142,7 +1177,14 @@
     if (gesture === "draw" && pointers.size === 1) {
       const p = toImage(e.clientX, e.clientY);
       if (appMode === "remove") {
-        strokeTo(p.x, p.y); requestRender();
+        if (tool === "auto") {
+          if (autoRegion) {
+            autoRegion.curX = p.x;
+            autoRegion.curY = p.y;
+            if (autoRegion.shape === "lasso") autoRegion.pts.push({ x: p.x, y: p.y });
+            requestRender();
+          }
+        } else { strokeTo(p.x, p.y); requestRender(); }
       } else if (appMode === "add") {
         const wm = getSelectedWatermark();
         if (isDraggingText && wm) {
@@ -1178,7 +1220,12 @@
       clearPending();
       const p = toImage(e.clientX, e.clientY);
       if (appMode === "remove") {
-        stamp(p.x, p.y); render();
+        if (tool === "auto") {
+          if (autoCandidates.length) {
+            const hit = hitTestCandidates(p.x, p.y);
+            if (hit >= 0) toggleCandidate(hit);
+          }
+        } else { stamp(p.x, p.y); render(); }
       } else if (appMode === "add") {
         const idx = hitTestWatermarks(p.x, p.y);
         selectedWatermarkIndex = idx;
@@ -1194,6 +1241,11 @@
     }
     // 结束拖拽/裁剪
     isDraggingText = false;
+    if (tool === "auto" && autoRegion) {
+      const r = autoRegion;
+      autoRegion = null;
+      finalizeAutoRegion(r);
+    }
     if (cropDragging) {
       cropDragging = false;
       const valid = cropRect && cropRect.w >= 5 && cropRect.h >= 5;
@@ -1512,9 +1564,238 @@
     tool = t;
     $("brushBtn").classList.toggle("active", t==="brush");
     $("eraserBtn").classList.toggle("active", t==="eraser");
+    $("autoBtn").classList.toggle("active", t==="auto");
+    $("autoPanel").style.display = t==="auto" ? "flex" : "none";
+    $("brushSizeRow").style.display = t==="auto" ? "none" : "";
+    if (t==="auto") { clearAuto(); setCompare(false); }
+    render();
   }
   $("brushBtn").onclick = () => setTool("brush");
   $("eraserBtn").onclick = () => setTool("eraser");
+  $("autoBtn").onclick = () => setTool(tool === "auto" ? "brush" : "auto");
+
+  // ---------- 智能抠除 ----------
+  function clearAuto() {
+    autoCandidates = [];
+    autoSelectedCount = 0;
+    autoRegion = null;
+    autoRegionW = 0;
+    autoRegionH = 0;
+    if (autoStatusTimer) { clearTimeout(autoStatusTimer); autoStatusTimer = 0; }
+    $("autoApplyBtn").disabled = true;
+    $("autoClearBtn").disabled = true;
+  }
+  function setAutoShape(s) {
+    autoShape = s;
+    $("autoRectBtn").classList.toggle("active", s === "rect");
+    $("autoEllipseBtn").classList.toggle("active", s === "ellipse");
+    $("autoLassoBtn").classList.toggle("active", s === "lasso");
+  }
+  $("autoRectBtn").onclick = () => setAutoShape("rect");
+  $("autoEllipseBtn").onclick = () => setAutoShape("ellipse");
+  $("autoLassoBtn").onclick = () => setAutoShape("lasso");
+  $("autoClearBtn").onclick = () => { clearAuto(); render(); };
+  $("autoApplyBtn").onclick = applyAuto;
+
+  function pointInPolygon(x, y, pts) {
+    let inside = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const xi = pts[i].x, yi = pts[i].y, xj = pts[j].x, yj = pts[j].y;
+      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+  function regionBounds(r) {
+    if (r.shape === "rect" || r.shape === "ellipse") {
+      return {
+        x: Math.min(r.startX, r.curX), y: Math.min(r.startY, r.curY),
+        w: Math.abs(r.curX - r.startX), h: Math.abs(r.curY - r.startY),
+      };
+    }
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of r.pts) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  }
+  function regionMaskFor(r, rect) {
+    if (r.shape === "rect") return null;
+    const rw = Math.max(1, Math.round(rect.w)), rh = Math.max(1, Math.round(rect.h));
+    const m = new Uint8Array(rw * rh);
+    if (r.shape === "ellipse") {
+      const cx = rect.x + rect.w / 2, cy = rect.y + rect.h / 2;
+      const rx = Math.max(1, rect.w / 2), ry = Math.max(1, rect.h / 2);
+      for (let y = 0; y < rh; y++) {
+        for (let x = 0; x < rw; x++) {
+          const dx = (rect.x + x + 0.5 - cx) / rx, dy = (rect.y + y + 0.5 - cy) / ry;
+          if (dx * dx + dy * dy <= 1) m[y * rw + x] = 1;
+        }
+      }
+    } else {
+      const pts = r.pts.map((p) => ({ x: p.x - rect.x, y: p.y - rect.y }));
+      for (let y = 0; y < rh; y++) {
+        for (let x = 0; x < rw; x++) {
+          if (pointInPolygon(x + 0.5, y + 0.5, pts)) m[y * rw + x] = 1;
+        }
+      }
+    }
+    return m;
+  }
+  function finalizeAutoRegion(r) {
+    const rect = regionBounds(r);
+    rect.x = Math.max(0, Math.floor(rect.x));
+    rect.y = Math.max(0, Math.floor(rect.y));
+    rect.w = Math.min(workCanvas.width - rect.x, Math.ceil(rect.w));
+    rect.h = Math.min(workCanvas.height - rect.y, Math.ceil(rect.h));
+    autoRegion = null;
+    if (rect.w < 8 || rect.h < 8) { render(); return; }
+    runDetection(rect, regionMaskFor(r, rect));
+  }
+  async function runDetection(rect, regionMask) {
+    if (autoBusy || !hasImage) return;
+    autoBusy = true;
+    if (autoStatusTimer) { clearTimeout(autoStatusTimer); autoStatusTimer = 0; }
+    autoCandidates = [];
+    autoSelectedCount = 0;
+    $("autoApplyBtn").disabled = true;
+    $("autoClearBtn").disabled = false;
+    showStatus("AI 正在识别物体边界…");
+    let res = null, failed = false;
+    try {
+      res = await AutoCut.segment(workCanvas, rect, regionMask);
+    } catch (err) {
+      failed = true;
+      console.error("智能抠除失败:", err);
+      alert("智能识别失败：" + (err && err.message ? err.message : err));
+    } finally {
+      autoBusy = false;
+    }
+    if (res && res.candidates.length) {
+      autoRegionW = res.regionW;
+      autoRegionH = res.regionH;
+      autoCandidates = res.candidates.map((c) => ({
+        x: rect.x + c.x, y: rect.y + c.y, w: c.w, h: c.h,
+        regionX: rect.x, regionY: rect.y, mask: c.mask, selected: false,
+      }));
+      buildCandidateCanvases();
+      $("autoClearBtn").disabled = false;
+      showStatus("识别出 " + autoCandidates.length + " 个区域，点选后消除");
+      autoStatusTimer = setTimeout(hideStatus, 2200);
+    } else if (!failed) {
+      $("autoClearBtn").disabled = true;
+      showStatus("区域内未识别到物体，换个范围再试");
+      autoStatusTimer = setTimeout(hideStatus, 2500);
+    }
+    render();
+  }
+  function buildCandidateCanvases() {
+    for (const c of autoCandidates) {
+      const blue = document.createElement("canvas");
+      blue.width = c.w; blue.height = c.h;
+      const bctx = blue.getContext("2d");
+      const bimg = bctx.createImageData(c.w, c.h);
+      const red = document.createElement("canvas");
+      red.width = c.w; red.height = c.h;
+      const rctx = red.getContext("2d");
+      const rimg = rctx.createImageData(c.w, c.h);
+      for (let y = 0; y < c.h; y++) {
+        for (let x = 0; x < c.w; x++) {
+          if (!c.mask[(y + c.y - c.regionY) * autoRegionW + (x + c.x - c.regionX)]) continue;
+          const p = (y * c.w + x) * 4;
+          bimg.data[p] = 79; bimg.data[p + 1] = 140; bimg.data[p + 2] = 255; bimg.data[p + 3] = 140;
+          rimg.data[p] = 255; rimg.data[p + 1] = 59; rimg.data[p + 2] = 59; rimg.data[p + 3] = 255;
+        }
+      }
+      bctx.putImageData(bimg, 0, 0);
+      rctx.putImageData(rimg, 0, 0);
+      c.overlayCanvas = blue;
+      c.fillCanvas = red;
+    }
+  }
+  function hitTestCandidates(px, py) {
+    for (let i = autoCandidates.length - 1; i >= 0; i--) {
+      const c = autoCandidates[i];
+      if (px < c.x || py < c.y || px >= c.x + c.w || py >= c.y + c.h) continue;
+      const lx = Math.floor(px - c.x), ly = Math.floor(py - c.y);
+      if (c.mask[(c.y - c.regionY + ly) * autoRegionW + (c.x - c.regionX + lx)] === 1) return i;
+    }
+    return -1;
+  }
+  function toggleCandidate(i) {
+    const c = autoCandidates[i];
+    c.selected = !c.selected;
+    autoSelectedCount += c.selected ? 1 : -1;
+    $("autoApplyBtn").disabled = autoSelectedCount === 0;
+    render();
+  }
+  async function applyAuto() {
+    if (!autoSelectedCount || !autoCandidates.length) return;
+    if (autoStatusTimer) { clearTimeout(autoStatusTimer); autoStatusTimer = 0; }
+    maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+    for (const c of autoCandidates) {
+      if (c.selected) maskCtx.drawImage(c.fillCanvas, c.x, c.y);
+    }
+    clearAuto();
+    render();
+    await doInpaint();
+  }
+  function drawAutoOverlay(ctx) {
+    const lw = Math.max(1.5, workCanvas.height * 0.0025);
+    if (autoRegion) {
+      ctx.save();
+      ctx.strokeStyle = "#4f8cff";
+      ctx.lineWidth = lw;
+      ctx.setLineDash([workCanvas.height * 0.01, workCanvas.height * 0.006]);
+      const r = autoRegion;
+      if (r.shape === "rect") {
+        const x = Math.min(r.startX, r.curX), y = Math.min(r.startY, r.curY);
+        ctx.strokeRect(x, y, Math.abs(r.curX - r.startX), Math.abs(r.curY - r.startY));
+      } else if (r.shape === "ellipse") {
+        const cx = (r.startX + r.curX) / 2, cy = (r.startY + r.curY) / 2;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, Math.abs(r.curX - r.startX) / 2, Math.abs(r.curY - r.startY) / 2, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (r.shape === "lasso" && r.pts.length > 1) {
+        ctx.beginPath();
+        ctx.moveTo(r.pts[0].x, r.pts[0].y);
+        for (let i = 1; i < r.pts.length; i++) ctx.lineTo(r.pts[i].x, r.pts[i].y);
+        ctx.closePath();
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    const fsBase = Math.max(9, workCanvas.height * 0.014);
+    for (let i = 0; i < autoCandidates.length; i++) {
+      const c = autoCandidates[i];
+      const r = Math.min(fsBase, Math.max(6, Math.min(c.w, c.h) * 0.16));
+      const fs = Math.max(8, r * 1.4);
+      ctx.save();
+      if (c.selected) {
+        ctx.globalAlpha = 0.5;
+        ctx.drawImage(c.fillCanvas, c.x, c.y);
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.drawImage(c.overlayCanvas, c.x, c.y);
+      }
+      ctx.strokeStyle = c.selected ? "#ff3b3b" : "#4f8cff";
+      ctx.lineWidth = lw;
+      ctx.setLineDash(c.selected ? [] : [workCanvas.height * 0.008, workCanvas.height * 0.005]);
+      ctx.strokeRect(c.x - lw / 2, c.y - lw / 2, c.w + lw, c.h + lw);
+      ctx.fillStyle = c.selected ? "#ff3b3b" : "#4f8cff";
+      ctx.beginPath();
+      ctx.arc(c.x + c.w / 2, c.y + c.h / 2, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#ffffff";
+      ctx.font = fs + "px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(String(i + 1), c.x + c.w / 2, c.y + c.h / 2);
+      ctx.restore();
+    }
+  }
 
   $("sizeRange").oninput = (e) => { brushSize=parseInt(e.target.value,10); $("sizeVal").textContent=brushSize+"px"; };
   // 清晰度固定为最高档：AI 始终按原图分辨率处理，最清晰
