@@ -1,5 +1,6 @@
 # Claude 的私人记忆(含个人信息,不要推到 GitHub)
 .claude-memory/
+.Codex-memory/
 
 # 批量处理的测试输出
 加水印_*.png
