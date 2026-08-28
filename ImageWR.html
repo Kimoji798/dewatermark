@@ -104,6 +104,38 @@
      （纯 justify-content:center 溢出后左侧会滚不到，safe center 老内核不支持） */
   #canvasWrap { position: relative; line-height: 0; box-shadow: 0 8px 40px rgba(0,0,0,.5); margin: auto; }
   #view { display: block; cursor: crosshair; max-width: none; }
+  /* 前后对比分割线:左侧=修改后,右侧=原图,默认停最右侧 */
+  #compareLine {
+    position: absolute;
+    top: 0; left: 0;
+    width: 2px; height: 100%;
+    background: var(--accent);
+    display: none;
+    cursor: ew-resize;
+    touch-action: none;
+    z-index: 5;
+    box-shadow: 0 0 6px rgba(0,0,0,.5);
+  }
+  /* 隐形抓取区向左延伸,线贴边时也能轻松按住 */
+  #compareLine::before {
+    content: "";
+    position: absolute;
+    top: 0; bottom: 0;
+    left: -14px; width: 28px;
+  }
+  #compareLine .handle {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,.4);
+    display: flex; align-items: center; justify-content: center;
+    cursor: ew-resize;
+  }
+  #compareLine .handle::before { content: "⇔"; color: #fff; font-size: 14px; line-height: 1; }
   #brushCursor {
     position: fixed;
     border: 2px solid rgba(255,255,255,.9);
@@ -250,6 +282,9 @@
       </div>
       <div class="row">
         <button id="saveBtn" disabled>💾 保存结果</button>
+      </div>
+      <div class="row">
+        <button id="compareBtn" disabled>↔ 对比原图</button>
       </div>
       <label class="field">保存格式
         <select id="saveFormat">
@@ -453,9 +488,10 @@
       <p>支持 JPG / PNG / WebP 等格式<br>也可以点击下方按钮，或直接 Ctrl+V 粘贴截图</p>
       <button class="pick" id="pickBtn">选择图片</button>
     </div>
-    <div id="canvasWrap" style="display:none;">
-      <canvas id="view"></canvas>
-    </div>
+  <div id="canvasWrap" style="display:none;">
+    <canvas id="view"></canvas>
+    <div id="compareLine"><div class="handle"></div></div>
+  </div>
     <div class="status" id="status"><span class="spinner"></span><span id="statusText">处理中…</span></div>
   </div>
 </div>
@@ -482,6 +518,11 @@
   let brushSize = 30;       // in image pixels
   let drawing = false;
   let lastPt = null;
+  // 前后对比:原图快照 + 分割线(左侧=修改后,右侧=原图)
+  let originalCanvas = null;
+  let compareOn = false;
+  let compareX = 0;        // 图像像素坐标,默认最右侧
+  let compareDragging = false;
   const undoStack = [];     // ImageData snapshots of workCanvas
   const MAX_UNDO = 12;
   // 撤销栈总内存预算（字节）。4K 图单张快照约 50MB，固定 12 张会占近 600MB，
@@ -660,7 +701,7 @@
   const brushCursor = $("brushCursor");
   const fileInput = $("fileInput");
 
-  const controls = ["saveBtn","brushBtn","eraserBtn","clearMaskBtn","inpaintBtn",
+  const controls = ["saveBtn","compareBtn","brushBtn","eraserBtn","clearMaskBtn","inpaintBtn",
     "undoBtn","resetBtn","zoomOutBtn","zoomFitBtn","zoomInBtn",
     "editBrushBtn","editCropBtn","rotateLeftBtn","rotateRightBtn",
     "addWatermarkBtn","editSizeRange"];
@@ -682,6 +723,11 @@
     workCanvas.height = maskCanvas.height = img.naturalHeight;
     workCtx.clearRect(0, 0, workCanvas.width, workCanvas.height);
     workCtx.drawImage(img, 0, 0);
+    if (!originalCanvas) originalCanvas = document.createElement("canvas");
+    originalCanvas.width = workCanvas.width;
+    originalCanvas.height = workCanvas.height;
+    originalCanvas.getContext("2d").drawImage(workCanvas, 0, 0);
+    setCompare(false);
     maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
     undoStack.length = 0;
     undoBytes = 0;
@@ -720,6 +766,7 @@
     view.height = workCanvas.height;
     view.style.width = (workCanvas.width * scale) + "px";
     view.style.height = (workCanvas.height * scale) + "px";
+    updateCompareLine();
     render();
   }
 
@@ -812,6 +859,17 @@
       viewCtx.strokeRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
       viewCtx.restore();
     }
+
+    // 对比模式:分割线右侧盖回原图(左侧保持修改后)
+    if (compareOn && originalCanvas &&
+        originalCanvas.width === view.width && originalCanvas.height === view.height) {
+      viewCtx.save();
+      viewCtx.beginPath();
+      viewCtx.rect(compareX, 0, view.width - compareX, view.height);
+      viewCtx.clip();
+      viewCtx.drawImage(originalCanvas, 0, 0);
+      viewCtx.restore();
+    }
   }
 
   // 指针快速移动时一帧内会连发多次事件，每次都整图重绘会卡顿。
@@ -822,6 +880,49 @@
     renderPending = true;
     requestAnimationFrame(() => { renderPending = false; render(); });
   }
+
+  // ---------- 前后对比 ----------
+  function updateCompareLine() {
+    const line = $("compareLine");
+    if (!compareOn || !line) return;
+    line.style.left = (compareX * scale) + "px";
+  }
+  function setCompare(on) {
+    compareOn = !!(on && hasImage && originalCanvas);
+    const line = $("compareLine");
+    const btn = $("compareBtn");
+    if (compareOn) {
+      compareX = workCanvas.width;   // 默认最右侧 = 全部显示修改后
+      line.style.display = "block";
+      btn.classList.add("active");
+      view.style.cursor = "default";
+    } else {
+      compareDragging = false;
+      line.style.display = "none";
+      btn.classList.remove("active");
+      view.style.cursor = "";
+    }
+    updateCompareLine();
+    render();
+  }
+  $("compareBtn").onclick = () => setCompare(!compareOn);
+  $("compareLine").addEventListener("pointerdown", (e) => {
+    if (!compareOn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    compareDragging = true;
+    $("compareLine").setPointerCapture(e.pointerId);
+  });
+  $("compareLine").addEventListener("pointermove", (e) => {
+    if (!compareDragging) return;
+    const p = toImageCoords(e);
+    compareX = Math.max(0, Math.min(workCanvas.width, p.x));
+    updateCompareLine();
+    requestRender();
+  });
+  const endCompareDrag = () => { compareDragging = false; };
+  $("compareLine").addEventListener("pointerup", endCompareDrag);
+  $("compareLine").addEventListener("pointercancel", endCompareDrag);
 
   // ---------- Edit mode: brush painting on image ----------
   function editStamp(x, y) {
@@ -849,6 +950,7 @@
     const w = Math.min(workCanvas.width - x, Math.round(cropRect.w));
     const h = Math.min(workCanvas.height - y, Math.round(cropRect.h));
     if (w < 5 || h < 5) { cancelCrop(); return; }
+    setCompare(false);
     pushUndo();
     const cropped = document.createElement("canvas");
     cropped.width = w; cropped.height = h;
@@ -872,6 +974,7 @@
 
   // ---------- Edit mode: rotate ----------
   function rotateImage(deg) {
+    setCompare(false);
     pushUndo();
     const rotated = document.createElement("canvas");
     const rad = deg * Math.PI / 180;
@@ -956,6 +1059,8 @@
 
   view.addEventListener("pointerdown", (e) => {
     if (!hasImage) return;
+    // 对比模式下开始涂抹/裁剪就自动退出对比,避免误画
+    if (compareOn && appMode !== "add") setCompare(false);
     e.preventDefault();
     view.setPointerCapture(e.pointerId);
 
@@ -1055,7 +1160,7 @@
 
   // ---------- Brush cursor ----------
   function updateCursor(e) {
-    const showBrush = hasImage &&
+    const showBrush = hasImage && !compareOn &&
       (appMode === "remove" || (appMode === "edit" && editTool === "brush"));
     if (!showBrush) { brushCursor.style.display = "none"; return; }
     const size = (appMode === "edit" ? editBrushSize : brushSize);
@@ -1918,6 +2023,10 @@
       fitToStage();
     }
     workCtx.putImageData(snap, 0, 0);
+    // 撤销裁剪/旋转后尺寸与最初原图不一致时,退出对比
+    if (originalCanvas && (originalCanvas.width !== workCanvas.width || originalCanvas.height !== workCanvas.height)) {
+      setCompare(false);
+    }
     if (!undoStack.length) {
       $("undoBtn").disabled = true;
       const eu = $("editUndoBtn"); if (eu) eu.disabled = true;
@@ -2027,6 +2136,7 @@
   // ---------- Keyboard ----------
   window.addEventListener("keydown", (e) => {
     if (!hasImage) return;
+    if (e.key === "Escape" && compareOn) { setCompare(false); return; }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); $("undoBtn").click(); return; }
     if (e.key === "[") { $("sizeRange").value = Math.max(4, brushSize - 4); $("sizeRange").oninput({ target: $("sizeRange") }); }
     if (e.key === "]") { $("sizeRange").value = Math.min(120, brushSize + 4); $("sizeRange").oninput({ target: $("sizeRange") }); }

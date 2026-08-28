@@ -62,6 +62,21 @@
   }
   .icon-btn:disabled { opacity: .4; }
   .icon-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .fab {
+    position: absolute;
+    top: 12px; right: 12px;
+    z-index: 15;
+    padding: 9px 13px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+    color: var(--text);
+    font-size: 13px;
+    font-family: inherit;
+    box-shadow: 0 4px 14px rgba(0,0,0,.35);
+  }
+  .fab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .fab:disabled { opacity: .4; }
   /* ---------- Stage ---------- */
   .stage {
     flex: 1;
@@ -85,6 +100,35 @@
     box-shadow: 0 6px 30px rgba(0,0,0,.5);
     will-change: transform;
   }
+  /* 前后对比分割线(在 wrap 内,跟随缩放平移):左侧=修改后,右侧=原图 */
+  #compareLine {
+    position: absolute;
+    top: 0; left: 0;
+    width: 2px; height: 100%;
+    background: var(--accent);
+    display: none;
+    touch-action: none;
+    z-index: 5;
+    box-shadow: 0 0 6px rgba(0,0,0,.5);
+  }
+  /* 隐形抓取区向左延伸:线贴在最右时中心点会被屏幕边缘裁掉,手指从线左侧一点也能按住拖动 */
+  #compareLine::before {
+    content: "";
+    position: absolute;
+    top: 0; bottom: 0;
+    left: -22px; width: 44px;
+  }
+  #compareLine .handle {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,.4);
+    display: flex; align-items: center; justify-content: center;
+  }
+  #compareLine .handle::before { content: "⇔"; color: #fff; line-height: 1; }
   #view { display: block; }
   .drop {
     position: absolute;
@@ -337,6 +381,7 @@
 <div class="stage" id="stage">
   <div id="canvasWrap" style="display:none;">
     <canvas id="view"></canvas>
+    <div id="compareLine"><div class="handle"></div></div>
   </div>
   <div class="drop" id="drop">
     <h2>选择要去水印的图片</h2>
@@ -348,6 +393,7 @@
     <div class="spinner"></div>
     <div id="statusText">正在去除水印…</div>
   </div>
+  <button class="fab" id="compareBtn" disabled>↔ 对比原图</button>
 </div>
 
 <!-- Remove mode toolbar -->
@@ -572,6 +618,11 @@
   let tool = "brush";
   let brushSize = 40;      // image px
   const MAX_SIDE = 2400;   // cap working resolution for phone performance
+  // 前后对比:原图快照 + 分割线(左侧=修改后,右侧=原图)
+  let originalCanvas = null;
+  let compareOn = false;
+  let compareX = 0;        // 图像像素坐标,默认最右侧
+  let compareDragging = false;
 
   // view transform: image px -> screen px inside stage
   let tx = 0, ty = 0, zoom = 1, minZoom = 1;
@@ -596,7 +647,7 @@
   let cropStart = null;
   let cropDragging = false;
 
-  const controls = ["saveBtn","brushBtn","eraserBtn","undoBtn","clearBtn","resetBtn","inpaintBtn",
+  const controls = ["saveBtn","compareBtn","brushBtn","eraserBtn","undoBtn","clearBtn","resetBtn","inpaintBtn",
     "editBrushBtn","editCropBtn","rotateLeftBtn","rotateRightBtn",
     "libraryBtn","templatesBtn"];
   const setEnabled = (on) => controls.forEach(id => { const el=$(id); if (el) el.disabled = !on; });
@@ -710,6 +761,11 @@
     workCanvas.height = maskCanvas.height = view.height = h;
     workCtx.clearRect(0,0,w,h);
     workCtx.drawImage(img, 0, 0, w, h);
+    if (!originalCanvas) originalCanvas = document.createElement("canvas");
+    originalCanvas.width = workCanvas.width;
+    originalCanvas.height = workCanvas.height;
+    originalCanvas.getContext("2d").drawImage(workCanvas, 0, 0);
+    setCompare(false);
     maskCtx.clearRect(0,0,w,h);
     undoStack.length = 0;
     undoBytes = 0;
@@ -743,6 +799,7 @@
   }
   function applyTransform() {
     wrap.style.transform = `translate(${tx}px, ${ty}px) scale(${zoom})`;
+    updateCompareLine();
   }
   function renderTextWatermark(ctx, wm) {
     if (!wm || !wm.text.trim()) return;
@@ -825,6 +882,17 @@
       viewCtx.strokeRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
       viewCtx.restore();
     }
+
+    // 对比模式:分割线右侧盖回原图(左侧保持修改后)
+    if (compareOn && originalCanvas &&
+        originalCanvas.width === view.width && originalCanvas.height === view.height) {
+      viewCtx.save();
+      viewCtx.beginPath();
+      viewCtx.rect(compareX, 0, view.width - compareX, view.height);
+      viewCtx.clip();
+      viewCtx.drawImage(originalCanvas, 0, 0);
+      viewCtx.restore();
+    }
   }
 
   // 手指快速滑动时一帧内事件很密，rAF 合并重绘，避免大图涂抹卡顿
@@ -834,6 +902,54 @@
     renderPending = true;
     requestAnimationFrame(() => { renderPending = false; render(); });
   }
+
+  // ---------- 前后对比 ----------
+  function updateCompareLine() {
+    const line = $("compareLine");
+    if (!compareOn || !line) return;
+    // 分割线在 wrap(transform 缩放) 内:left 用未缩放坐标,宽度/手柄尺寸除以 zoom 保持屏幕大小恒定
+    line.style.left = compareX + "px";
+    line.style.width = (2 / zoom) + "px";
+    const h = line.querySelector(".handle");
+    h.style.width = h.style.height = (34 / zoom) + "px";
+    h.style.fontSize = (16 / zoom) + "px";
+  }
+  function setCompare(on) {
+    compareOn = !!(on && hasImage && originalCanvas);
+    const line = $("compareLine");
+    const btn = $("compareBtn");
+    if (compareOn) {
+      compareX = workCanvas.width;   // 默认最右侧 = 全部显示修改后
+      line.style.display = "block";
+      btn.classList.add("active");
+    } else {
+      compareDragging = false;
+      line.style.display = "none";
+      btn.classList.remove("active");
+    }
+    updateCompareLine();
+    render();
+  }
+  $("compareBtn").onclick = () => setCompare(!compareOn);
+  // FAB 在 stage 内,阻止指针事件冒泡到手势引擎,否则点按钮会被当成落笔并自动退出对比
+  $("compareBtn").addEventListener("pointerdown", (e) => e.stopPropagation());
+  $("compareLine").addEventListener("pointerdown", (e) => {
+    if (!compareOn) return;
+    e.preventDefault();
+    e.stopPropagation();   // 不让手势引擎把这当落笔
+    compareDragging = true;
+    $("compareLine").setPointerCapture(e.pointerId);
+  });
+  $("compareLine").addEventListener("pointermove", (e) => {
+    if (!compareDragging) return;
+    const p = toImage(e.clientX, e.clientY);
+    compareX = Math.max(0, Math.min(workCanvas.width, p.x));
+    updateCompareLine();
+    requestRender();
+  });
+  const endCompareDrag = () => { compareDragging = false; };
+  $("compareLine").addEventListener("pointerup", endCompareDrag);
+  $("compareLine").addEventListener("pointercancel", endCompareDrag);
 
   // 水印命中检测（考虑旋转）
   function isPointInText(px, py, wm) {
@@ -886,6 +1002,7 @@
     const w = Math.min(workCanvas.width - x, Math.round(cropRect.w));
     const h = Math.min(workCanvas.height - y, Math.round(cropRect.h));
     if (w < 5 || h < 5) { cancelCrop(); return; }
+    setCompare(false);
     pushUndo();
     const cropped = document.createElement("canvas");
     cropped.width = w; cropped.height = h;
@@ -908,6 +1025,7 @@
     render();
   }
   function rotateImage(deg) {
+    setCompare(false);
     pushUndo();
     const rotated = document.createElement("canvas");
     const rad = deg * Math.PI / 180;
@@ -975,11 +1093,11 @@
 
     if (pointers.size === 1) {
       // 先不落笔：等一小段时间确认不是双指缩放的第一根手指
+      clearPending();
       gesture = "pending";
       pendingId = e.pointerId;
       lastPt = null;
       editLastPt = null;
-      clearPending();
       pendingTimer = setTimeout(() => {
         pendingTimer = null;
         if (gesture === "pending" && pointers.size === 1) {
@@ -987,6 +1105,8 @@
           const pt = pointers.get(pendingId);
           if (!pt) return;
           const p = toImage(pt.x, pt.y);
+          // 对比模式下开始涂抹/裁剪就自动退出,避免误画
+          if (compareOn && appMode !== "add") setCompare(false);
           if (appMode === "remove") {
             strokeTo(p.x, p.y); render();
           } else if (appMode === "add") {
@@ -1431,6 +1551,9 @@
       fitView();
     }
     workCtx.putImageData(snap,0,0);
+    if (originalCanvas && (originalCanvas.width !== workCanvas.width || originalCanvas.height !== workCanvas.height)) {
+      setCompare(false);
+    }
     if (!undoStack.length) {
       $("undoBtn").disabled=true;
       if ($("editUndoBtn")) $("editUndoBtn").disabled = true;
