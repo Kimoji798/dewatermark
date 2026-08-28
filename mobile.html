@@ -410,16 +410,6 @@
     <input type="range" id="sizeRange" min="6" max="140" value="40">
     <span class="v" id="sizeVal">40px</span>
   </div>
-  <div class="slider-row">
-    <label>清晰度</label>
-    <input type="range" id="clarityRange" min="1" max="4" value="2">
-    <span class="v" id="clarityVal">中</span>
-  </div>
-  <div class="slider-row">
-    <label>强度</label>
-    <input type="range" id="qualityRange" min="1" max="3" value="2">
-    <span class="v" id="qualityVal">标准</span>
-  </div>
   <label class="slider-row" style="gap:8px;cursor:pointer;">
     <input type="checkbox" id="aiToggle" checked style="width:20px;height:20px;accent-color:var(--accent);flex:none;">
     <span style="font-size:12px;color:var(--text);flex:1;">AI 智能修复（更自然，首次需联网下载模型）</span>
@@ -449,6 +439,7 @@
 <div class="toolbar" data-mode="edit">
   <div class="tools-row">
     <button class="tool active" id="editBrushBtn" disabled><span class="ic">🖌</span>画笔</button>
+    <button class="tool" id="editEraserBtn" disabled><span class="ic">🧹</span>橡皮</button>
     <button class="tool" id="editCropBtn" disabled><span class="ic">✂</span>裁剪</button>
     <button class="tool" id="rotateLeftBtn" disabled><span class="ic">⟲</span>左转</button>
     <button class="tool" id="rotateRightBtn" disabled><span class="ic">⟳</span>右转</button>
@@ -628,10 +619,7 @@
   let tx = 0, ty = 0, zoom = 1, minZoom = 1;
 
   const undoStack = [];
-  const MAX_UNDO = 8;
-  // 撤销栈总内存预算（字节）。手机内存小，超预算丢最旧的快照防卡死。
-  const UNDO_BUDGET = 96 * 1024 * 1024;
-  let undoBytes = 0;
+  const MAX_UNDO = 16;   // 只按数量限制，保证每一步都能撤销；还原用 originalCanvas
 
   // watermark state
   let textWatermarks = [];
@@ -640,7 +628,7 @@
   let dragOffset = { x: 0, y: 0 };
 
   // edit mode state
-  let editTool = "brush";       // "brush" | "crop"
+  let editTool = "brush";       // "brush" | "eraser" | "crop"
   let editBrushColor = "#ff3b3b";
   let editBrushSize = 10;
   let cropRect = null;
@@ -648,7 +636,7 @@
   let cropDragging = false;
 
   const controls = ["saveBtn","compareBtn","brushBtn","eraserBtn","undoBtn","clearBtn","resetBtn","inpaintBtn",
-    "editBrushBtn","editCropBtn","rotateLeftBtn","rotateRightBtn",
+    "editBrushBtn","editEraserBtn","editCropBtn","rotateLeftBtn","rotateRightBtn",
     "libraryBtn","templatesBtn"];
   const setEnabled = (on) => controls.forEach(id => { const el=$(id); if (el) el.disabled = !on; });
 
@@ -768,7 +756,6 @@
     setCompare(false);
     maskCtx.clearRect(0,0,w,h);
     undoStack.length = 0;
-    undoBytes = 0;
     hasImage = true;
     drop.style.display = "none";
     wrap.style.display = "block";
@@ -978,11 +965,12 @@
 
   // Edit brush
   function editStamp(x, y) {
-    workCtx.globalCompositeOperation = "source-over";
+    workCtx.globalCompositeOperation = editTool === "eraser" ? "destination-out" : "source-over";
     workCtx.fillStyle = editBrushColor;
     workCtx.beginPath();
     workCtx.arc(x, y, editBrushSize / 2, 0, Math.PI * 2);
     workCtx.fill();
+    workCtx.globalCompositeOperation = "source-over";
   }
   let editLastPt = null;
   function editStrokeTo(x, y) {
@@ -1124,9 +1112,11 @@
             refreshWmButtonStates();
             render();
           } else if (appMode === "edit") {
-            if (editTool === "brush") {
+            if (editTool === "brush" || editTool === "eraser") {
               pushUndo();
-              editStamp(p.x, p.y); render();
+              editStamp(p.x, p.y);
+              editLastPt = { x: p.x, y: p.y };
+              render();
             } else if (editTool === "crop") {
               cropDragging = true;
               cropStart = { x: p.x, y: p.y };
@@ -1161,7 +1151,7 @@
           requestRender();
         }
       } else if (appMode === "edit") {
-        if (editTool === "brush") {
+        if (editTool === "brush" || editTool === "eraser") {
           editStrokeTo(p.x, p.y); requestRender();
         } else if (editTool === "crop" && cropDragging) {
           cropRect = {
@@ -1196,7 +1186,7 @@
         refreshWmButtonStates();
         render();
       } else if (appMode === "edit") {
-        if (editTool === "brush") {
+        if (editTool === "brush" || editTool === "eraser") {
           pushUndo();
           editStamp(p.x, p.y); render();
         }
@@ -1462,10 +1452,8 @@
   function pushUndo() {
     const snap = workCtx.getImageData(0,0,workCanvas.width,workCanvas.height);
     undoStack.push(snap);
-    undoBytes += snap.data.byteLength;
-    while (undoStack.length > 1 && (undoStack.length > MAX_UNDO || undoBytes > UNDO_BUDGET)) {
-      undoBytes -= undoStack.shift().data.byteLength;
-    }
+    // 只按数量限制；还原按钮用 originalCanvas 还原，不依赖栈底快照
+    while (undoStack.length > MAX_UNDO) undoStack.shift();
     $("undoBtn").disabled=false;
     if ($("editUndoBtn")) $("editUndoBtn").disabled = false;
   }
@@ -1479,7 +1467,7 @@
   async function doInpaint() {
     if (!hasImage) return;
     if (maskIsEmpty()) { alert("请先用手指涂抹要去除的水印区域。"); return; }
-    const quality=parseInt($("qualityRange").value,10);
+    const quality=3; // 强度固定为最高档 = 最精细
     const useAI = $("aiToggle") && $("aiToggle").checked && typeof AIInpaint !== "undefined";
 
     if (!useAI) {
@@ -1529,20 +1517,14 @@
   $("eraserBtn").onclick = () => setTool("eraser");
 
   $("sizeRange").oninput = (e) => { brushSize=parseInt(e.target.value,10); $("sizeVal").textContent=brushSize+"px"; };
-  const qL={1:"快速",2:"标准",3:"精细"};
-  $("qualityRange").oninput = (e) => { $("qualityVal").textContent=qL[e.target.value]||"标准"; };
-  // 清晰度 -> AI 处理分辨率上限（手机内存有限，最高档才用原图，注意大图可能较慢/占内存）
-  const clL={1:"低（快）",2:"中",3:"高",4:"原图（最清晰）"};
-  const clMax={1:640,2:1024,3:1536,4:Infinity};
-  $("clarityRange").oninput = (e) => { $("clarityVal").textContent=clL[e.target.value]||"中"; };
-  function currentMaxSide(){ const v=$("clarityRange")?$("clarityRange").value:"2"; return clMax[v]||1024; }
+  // 清晰度固定为最高档：AI 始终按原图分辨率处理，最清晰
+  function currentMaxSide(){ return Infinity; }
 
   $("clearBtn").onclick = () => { maskCtx.clearRect(0,0,maskCanvas.width,maskCanvas.height); render(); };
   $("inpaintBtn").onclick = doInpaint;
   $("undoBtn").onclick = () => {
     if (!undoStack.length) return;
     const snap = undoStack.pop();
-    undoBytes -= snap.data.byteLength;
     if (workCanvas.width !== snap.width || workCanvas.height !== snap.height) {
       workCanvas.width = snap.width; workCanvas.height = snap.height;
       maskCanvas.width = snap.width; maskCanvas.height = snap.height;
@@ -1563,9 +1545,19 @@
   $("resetBtn").onclick = () => {
     if (!undoStack.length) return;
     if (!confirm("还原到最初的图片？所有去水印操作会被撤销。")) return;
-    workCtx.putImageData(undoStack[0],0,0);
-    undoStack.length=0; undoBytes=0; $("undoBtn").disabled=true;
+    if (originalCanvas) {
+      workCanvas.width = maskCanvas.width = view.width = originalCanvas.width;
+      workCanvas.height = maskCanvas.height = view.height = originalCanvas.height;
+      workCtx.drawImage(originalCanvas, 0, 0);
+    }
+    undoStack.length=0; $("undoBtn").disabled=true;
+    if ($("editUndoBtn")) $("editUndoBtn").disabled = true;
     maskCtx.clearRect(0,0,maskCanvas.width,maskCanvas.height);
+    cropRect = null; cropDragging = false;
+    if ($("confirmCropBtn")) $("confirmCropBtn").disabled = true;
+    if ($("cancelCropBtn")) $("cancelCropBtn").disabled = true;
+    setCompare(false);
+    fitView();
     render();
   };
 
@@ -1640,7 +1632,7 @@
       const hints = {
         remove: "<b>单指</b>涂抹水印 · <b>双指</b>缩放/移动",
         add: "<b>单指</b>拖动水印 · <b>双指</b>缩放/移动 · 点下方按钮编辑",
-        edit: "<b>单指</b>画笔/裁剪 · <b>双指</b>缩放/移动"
+        edit: "<b>单指</b>画笔/橡皮/裁剪 · <b>双指</b>缩放/移动"
       };
       modeHint.innerHTML = hints[m] || "";
       modeHint.style.transition = "";
@@ -2035,14 +2027,16 @@
   function setEditTool(t) {
     editTool = t;
     $("editBrushBtn").classList.toggle("active", t === "brush");
+    $("editEraserBtn").classList.toggle("active", t === "eraser");
     $("editCropBtn").classList.toggle("active", t === "crop");
-    $("editBrushSizeRow").style.display = t === "brush" ? "" : "none";
+    $("editBrushSizeRow").style.display = (t === "brush" || t === "eraser") ? "" : "none";
     $("editColorPalette").style.display = t === "brush" ? "" : "none";
     $("editCropActions").style.display = t === "crop" ? "flex" : "none";
     if (t !== "crop") { cropRect = null; cropDragging = false; }
     render();
   }
   $("editBrushBtn").onclick = () => setEditTool("brush");
+  $("editEraserBtn").onclick = () => setEditTool("eraser");
   $("editCropBtn").onclick = () => setEditTool("crop");
   $("rotateLeftBtn").onclick = () => rotateImage(-90);
   $("rotateRightBtn").onclick = () => rotateImage(90);

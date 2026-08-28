@@ -318,12 +318,6 @@
         <input type="checkbox" id="aiToggle" checked style="width:auto;accent-color:var(--accent);">
         <span>AI 智能修复（更自然，首次需联网下载模型）</span>
       </label>
-      <label class="field">清晰度 <span class="val" id="clarityVal">高</span>
-        <input type="range" id="clarityRange" min="1" max="4" value="3">
-      </label>
-      <label class="field">修复强度（快速模式）<span class="val" id="qualityVal">标准</span>
-        <input type="range" id="qualityRange" min="1" max="3" value="2">
-      </label>
       <button id="inpaintBtn" class="primary" disabled>✨ 去除水印</button>
       <div class="row">
         <button id="undoBtn" disabled>↶ 撤销</button>
@@ -434,6 +428,7 @@
       <div class="group-title">编辑工具</div>
       <div class="row">
         <button id="editBrushBtn" class="active" disabled>🖌 画笔</button>
+        <button id="editEraserBtn" disabled>🧹 橡皮擦</button>
         <button id="editCropBtn" disabled>✂ 裁剪</button>
       </div>
       <div class="row">
@@ -524,11 +519,7 @@
   let compareX = 0;        // 图像像素坐标,默认最右侧
   let compareDragging = false;
   const undoStack = [];     // ImageData snapshots of workCanvas
-  const MAX_UNDO = 12;
-  // 撤销栈总内存预算（字节）。4K 图单张快照约 50MB，固定 12 张会占近 600MB，
-  // 超预算丢最旧的快照，避免大图时浏览器内存吃紧卡死。
-  const UNDO_BUDGET = 300 * 1024 * 1024;
-  let undoBytes = 0;
+  const MAX_UNDO = 30;      // 只按数量限制，保证每一步都能撤销；还原用 originalCanvas
 
   // Text watermark state
   let textWatermarks = []; // 数组，支持多个水印
@@ -685,7 +676,7 @@
   }
 
   // Edit mode state
-  let editTool = "brush";        // "brush" | "crop"
+  let editTool = "brush";        // "brush" | "eraser" | "crop"
   let editBrushColor = "#ff3b3b";
   let editBrushSize = 10;
   let editDrawing = false;
@@ -703,7 +694,7 @@
 
   const controls = ["saveBtn","compareBtn","brushBtn","eraserBtn","clearMaskBtn","inpaintBtn",
     "undoBtn","resetBtn","zoomOutBtn","zoomFitBtn","zoomInBtn",
-    "editBrushBtn","editCropBtn","rotateLeftBtn","rotateRightBtn",
+    "editBrushBtn","editEraserBtn","editCropBtn","rotateLeftBtn","rotateRightBtn",
     "addWatermarkBtn","editSizeRange"];
 
   function setEnabled(on) { controls.forEach(id => $(id).disabled = !on); }
@@ -730,7 +721,6 @@
     setCompare(false);
     maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
     undoStack.length = 0;
-    undoBytes = 0;
     hasImage = true;
     drop.style.display = "none";
     canvasWrap.style.display = "block";
@@ -926,11 +916,12 @@
 
   // ---------- Edit mode: brush painting on image ----------
   function editStamp(x, y) {
-    workCtx.globalCompositeOperation = "source-over";
+    workCtx.globalCompositeOperation = editTool === "eraser" ? "destination-out" : "source-over";
     workCtx.fillStyle = editBrushColor;
     workCtx.beginPath();
     workCtx.arc(x, y, editBrushSize / 2, 0, Math.PI * 2);
     workCtx.fill();
+    workCtx.globalCompositeOperation = "source-over";
   }
   function editStrokeTo(x, y) {
     if (!editLastPt) { editStamp(x, y); editLastPt = { x, y }; return; }
@@ -1085,11 +1076,11 @@
         render();
       }
     } else if (appMode === "edit") {
-      if (editTool === "brush") {
+      if (editTool === "brush" || editTool === "eraser") {
         pushUndo();
         editDrawing = true;
-        editLastPt = null;
         editStamp(p.x, p.y);
+        editLastPt = { x: p.x, y: p.y };
         render();
       } else if (editTool === "crop") {
         cropDragging = true;
@@ -1116,7 +1107,7 @@
         view.style.cursor = hitTestWatermarks(p.x, p.y) >= 0 ? "grab" : "default";
       }
     } else if (appMode === "edit") {
-      if (editTool === "brush") {
+      if (editTool === "brush" || editTool === "eraser") {
         updateCursor(e);
         if (editDrawing) {
           editStrokeTo(p.x, p.y);
@@ -1161,7 +1152,7 @@
   // ---------- Brush cursor ----------
   function updateCursor(e) {
     const showBrush = hasImage && !compareOn &&
-      (appMode === "remove" || (appMode === "edit" && editTool === "brush"));
+      (appMode === "remove" || (appMode === "edit" && (editTool === "brush" || editTool === "eraser")));
     if (!showBrush) { brushCursor.style.display = "none"; return; }
     const size = (appMode === "edit" ? editBrushSize : brushSize);
     const d = size * scale;
@@ -1183,11 +1174,8 @@
   function pushUndo() {
     const snap = workCtx.getImageData(0, 0, workCanvas.width, workCanvas.height);
     undoStack.push(snap);
-    undoBytes += snap.data.byteLength;
-    // 数量与内存双重上限；至少保留最初一张（还原按钮要用）
-    while (undoStack.length > 1 && (undoStack.length > MAX_UNDO || undoBytes > UNDO_BUDGET)) {
-      undoBytes -= undoStack.shift().data.byteLength;
-    }
+    // 只按数量限制；还原按钮用 originalCanvas 还原，不依赖栈底快照
+    while (undoStack.length > MAX_UNDO) undoStack.shift();
     $("undoBtn").disabled = false;
     const eu = $("editUndoBtn"); if (eu) eu.disabled = false;
   }
@@ -1419,7 +1407,7 @@
   async function doInpaint() {
     if (!hasImage) return;
     if (maskIsEmpty()) { alert("请先用画笔涂抹要去除的水印区域。"); return; }
-    const quality = parseInt($("qualityRange").value, 10);
+    const quality = 3; // 强度固定为最高档 = 最精细
     const useAI = $("aiToggle") && $("aiToggle").checked && typeof AIInpaint !== "undefined";
 
     if (!useAI) {
@@ -1485,7 +1473,7 @@
     if (hasImage) {
       if (mode === "add") view.style.cursor = "default";
       else if (mode === "edit" && editTool === "crop") view.style.cursor = "crosshair";
-      else if (mode === "edit" && editTool === "brush") view.style.cursor = "none";
+      else if (mode === "edit" && (editTool === "brush" || editTool === "eraser")) view.style.cursor = "none";
       else view.style.cursor = "crosshair";
     }
     if (mode !== "edit" && mode !== "remove") brushCursor.style.display = "none";
@@ -1509,19 +1497,9 @@
     brushSize = parseInt(e.target.value, 10);
     $("sizeVal").textContent = brushSize + " px";
   };
-  const qLabels = { 1: "快速", 2: "标准", 3: "精细" };
-  $("qualityRange").oninput = (e) => {
-    $("qualityVal").textContent = qLabels[e.target.value] || "标准";
-  };
-  // 清晰度档位 -> AI 处理分辨率上限（越大越清晰、越慢/越吃内存；最高档=原图分辨率，完全不模糊）
-  const clarityLabels = { 1: "低（快）", 2: "中", 3: "高", 4: "原图（最清晰）" };
-  const clarityMaxSide = { 1: 768, 2: 1024, 3: 1536, 4: Infinity };
-  $("clarityRange").oninput = (e) => {
-    $("clarityVal").textContent = clarityLabels[e.target.value] || "高";
-  };
+  // 清晰度固定为最高档：AI 始终按原图分辨率处理，最清晰
   function currentMaxSide() {
-    const v = $("clarityRange") ? $("clarityRange").value : "3";
-    return clarityMaxSide[v] || 1536;
+    return Infinity;
   }
 
   // Text watermark controls
@@ -1978,17 +1956,19 @@
   function setEditTool(t) {
     editTool = t;
     $("editBrushBtn").classList.toggle("active", t === "brush");
+    $("editEraserBtn").classList.toggle("active", t === "eraser");
     $("editCropBtn").classList.toggle("active", t === "crop");
-    $("editBrushPanel").style.display = t === "brush" ? "" : "none";
+    $("editBrushPanel").style.display = (t === "brush" || t === "eraser") ? "" : "none";
     $("editCropPanel").style.display = t === "crop" ? "" : "none";
     if (t !== "crop") { cropRect = null; cropDragging = false; }
     if (appMode === "edit" && hasImage) {
       view.style.cursor = t === "crop" ? "crosshair" : "none";
     }
-    if (t !== "brush") brushCursor.style.display = "none";
+    if (t === "crop") brushCursor.style.display = "none";
     render();
   }
   $("editBrushBtn").onclick = () => setEditTool("brush");
+  $("editEraserBtn").onclick = () => setEditTool("eraser");
   $("editCropBtn").onclick = () => setEditTool("crop");
   $("rotateLeftBtn").onclick = () => rotateImage(-90);
   $("rotateRightBtn").onclick = () => rotateImage(90);
@@ -2014,7 +1994,6 @@
   $("undoBtn").onclick = () => {
     if (!undoStack.length) return;
     const snap = undoStack.pop();
-    undoBytes -= snap.data.byteLength;
     // cropped/rotated images may have different dimensions
     if (workCanvas.width !== snap.width || workCanvas.height !== snap.height) {
       workCanvas.width = snap.width; workCanvas.height = snap.height;
@@ -2036,12 +2015,21 @@
   $("resetBtn").onclick = () => {
     if (!undoStack.length) return;
     if (!confirm("还原到最初打开的图片？所有去水印操作将被撤销。")) return;
-    const first = undoStack[0];
-    workCtx.putImageData(first, 0, 0);
+    if (originalCanvas) {
+      workCanvas.width = maskCanvas.width = originalCanvas.width;
+      workCanvas.height = maskCanvas.height = originalCanvas.height;
+      workCtx.drawImage(originalCanvas, 0, 0);
+    }
     undoStack.length = 0;
-    undoBytes = 0;
     $("undoBtn").disabled = true;
+    const eu = $("editUndoBtn"); if (eu) eu.disabled = true;
     maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+    cropRect = null;
+    cropDragging = false;
+    if ($("confirmCropBtn")) $("confirmCropBtn").disabled = true;
+    if ($("cancelCropBtn")) $("cancelCropBtn").disabled = true;
+    setCompare(false);
+    fitToStage();
     render();
   };
 
