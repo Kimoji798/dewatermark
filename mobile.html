@@ -417,10 +417,7 @@
       <button class="tool" id="autoEllipseBtn"><span class="ic">◯</span>圆形</button>
       <button class="tool" id="autoLassoBtn"><span class="ic">✎</span>套索</button>
     </div>
-    <div class="tools-row">
-      <button class="tool" id="autoClearBtn" disabled><span class="ic">✕</span>清除</button>
-      <button class="tool" id="autoApplyBtn" disabled style="flex:1;background:var(--accent);color:#fff;border:none;font-weight:700;">✨ 消除选中</button>
-    </div>
+    <div style="font-size:12px;color:var(--text);opacity:.85;line-height:1.5;">点选识别出的区域会变红（和手指涂抹一样），点「去除水印」消除；之后还能继续用手指补涂</div>
   </div>
   <label class="slider-row" style="gap:8px;cursor:pointer;">
     <input type="checkbox" id="aiToggle" checked style="width:20px;height:20px;accent-color:var(--accent);flex:none;">
@@ -651,7 +648,6 @@
   let autoShape = "rect";        // "rect" | "ellipse" | "lasso"
   let autoRegion = null;         // 绘制中的框选 {shape,startX,startY,curX,curY,pts}
   let autoCandidates = [];       // 识别结果 [{x,y,w,h,mask,regionX,regionY,overlayCanvas,fillCanvas,selected}]
-  let autoSelectedCount = 0;
   let autoRegionW = 0, autoRegionH = 0;
   let autoBusy = false;
   let autoStatusTimer = 0;
@@ -1513,6 +1509,7 @@
     pushUndo();
     runInpaint(quality);
     maskCtx.clearRect(0,0,maskCanvas.width,maskCanvas.height);
+    clearAuto();
     render();
   }
 
@@ -1542,6 +1539,7 @@
       pushUndo();
       workCtx.putImageData(result,0,0);
       maskCtx.clearRect(0,0,maskCanvas.width,maskCanvas.height);
+      clearAuto();
       render();
       hideStatus();
     } catch(err) {
@@ -1567,7 +1565,7 @@
     $("autoBtn").classList.toggle("active", t==="auto");
     $("autoPanel").style.display = t==="auto" ? "flex" : "none";
     $("brushSizeRow").style.display = t==="auto" ? "none" : "";
-    if (t==="auto") { clearAuto(); setCompare(false); }
+    if (t==="auto") setCompare(false);
     render();
   }
   $("brushBtn").onclick = () => setTool("brush");
@@ -1577,13 +1575,10 @@
   // ---------- 智能抠除 ----------
   function clearAuto() {
     autoCandidates = [];
-    autoSelectedCount = 0;
     autoRegion = null;
     autoRegionW = 0;
     autoRegionH = 0;
     if (autoStatusTimer) { clearTimeout(autoStatusTimer); autoStatusTimer = 0; }
-    $("autoApplyBtn").disabled = true;
-    $("autoClearBtn").disabled = true;
   }
   function setAutoShape(s) {
     autoShape = s;
@@ -1594,8 +1589,6 @@
   $("autoRectBtn").onclick = () => setAutoShape("rect");
   $("autoEllipseBtn").onclick = () => setAutoShape("ellipse");
   $("autoLassoBtn").onclick = () => setAutoShape("lasso");
-  $("autoClearBtn").onclick = () => { clearAuto(); render(); };
-  $("autoApplyBtn").onclick = applyAuto;
 
   function pointInPolygon(x, y, pts) {
     let inside = false;
@@ -1659,9 +1652,6 @@
     autoBusy = true;
     if (autoStatusTimer) { clearTimeout(autoStatusTimer); autoStatusTimer = 0; }
     autoCandidates = [];
-    autoSelectedCount = 0;
-    $("autoApplyBtn").disabled = true;
-    $("autoClearBtn").disabled = false;
     showStatus("AI 正在识别物体边界…");
     let res = null, failed = false;
     try {
@@ -1681,11 +1671,9 @@
         regionX: rect.x, regionY: rect.y, mask: c.mask, selected: false,
       }));
       buildCandidateCanvases();
-      $("autoClearBtn").disabled = false;
-      showStatus("识别出 " + autoCandidates.length + " 个区域，点选后消除");
+      showStatus("识别出 " + autoCandidates.length + " 个区域，点选变红后点「去除水印」");
       autoStatusTimer = setTimeout(hideStatus, 2200);
     } else if (!failed) {
-      $("autoClearBtn").disabled = true;
       showStatus("区域内未识别到物体，换个范围再试");
       autoStatusTimer = setTimeout(hideStatus, 2500);
     }
@@ -1727,20 +1715,15 @@
   function toggleCandidate(i) {
     const c = autoCandidates[i];
     c.selected = !c.selected;
-    autoSelectedCount += c.selected ? 1 : -1;
-    $("autoApplyBtn").disabled = autoSelectedCount === 0;
-    render();
-  }
-  async function applyAuto() {
-    if (!autoSelectedCount || !autoCandidates.length) return;
-    if (autoStatusTimer) { clearTimeout(autoStatusTimer); autoStatusTimer = 0; }
-    maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
-    for (const c of autoCandidates) {
-      if (c.selected) maskCtx.drawImage(c.fillCanvas, c.x, c.y);
+    if (c.selected) {
+      maskCtx.drawImage(c.fillCanvas, c.x, c.y);
+    } else {
+      maskCtx.save();
+      maskCtx.globalCompositeOperation = "destination-out";
+      maskCtx.drawImage(c.fillCanvas, c.x, c.y);
+      maskCtx.restore();
     }
-    clearAuto();
     render();
-    await doInpaint();
   }
   function drawAutoOverlay(ctx) {
     const lw = Math.max(1.5, workCanvas.height * 0.0025);
@@ -1773,13 +1756,7 @@
       const r = Math.min(fsBase, Math.max(6, Math.min(c.w, c.h) * 0.16));
       const fs = Math.max(8, r * 1.4);
       ctx.save();
-      if (c.selected) {
-        ctx.globalAlpha = 0.5;
-        ctx.drawImage(c.fillCanvas, c.x, c.y);
-        ctx.globalAlpha = 1;
-      } else {
-        ctx.drawImage(c.overlayCanvas, c.x, c.y);
-      }
+      if (!c.selected) ctx.drawImage(c.overlayCanvas, c.x, c.y);
       ctx.strokeStyle = c.selected ? "#ff3b3b" : "#4f8cff";
       ctx.lineWidth = lw;
       ctx.setLineDash(c.selected ? [] : [workCanvas.height * 0.008, workCanvas.height * 0.005]);
