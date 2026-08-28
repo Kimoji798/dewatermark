@@ -8,6 +8,7 @@
 <meta name="theme-color" content="#0f1115">
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="apple-touch-icon" href="./icon-192.png">
+<link rel="icon" href="./icon-192.png">
 <title>🐢 龟龟水印 · 手机版</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -325,6 +326,11 @@
   <button class="icon-btn" id="installBtn" style="display:none;">安装</button>
   <button class="icon-btn" id="helpBtn">?</button>
   <button class="icon-btn" id="openBtn">打开</button>
+  <select id="saveFormat" class="icon-btn" style="padding:8px 6px;font-size:12px;max-width:66px;flex:none;" title="保存格式">
+    <option value="png">PNG</option>
+    <option value="jpeg">JPG</option>
+    <option value="webp">WebP</option>
+  </select>
   <button class="icon-btn primary" id="saveBtn" disabled>保存</button>
 </div>
 
@@ -572,6 +578,9 @@
 
   const undoStack = [];
   const MAX_UNDO = 8;
+  // 撤销栈总内存预算（字节）。手机内存小，超预算丢最旧的快照防卡死。
+  const UNDO_BUDGET = 96 * 1024 * 1024;
+  let undoBytes = 0;
 
   // watermark state
   let textWatermarks = [];
@@ -703,6 +712,7 @@
     workCtx.drawImage(img, 0, 0, w, h);
     maskCtx.clearRect(0,0,w,h);
     undoStack.length = 0;
+    undoBytes = 0;
     hasImage = true;
     drop.style.display = "none";
     wrap.style.display = "block";
@@ -815,6 +825,14 @@
       viewCtx.strokeRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
       viewCtx.restore();
     }
+  }
+
+  // 手指快速滑动时一帧内事件很密，rAF 合并重绘，避免大图涂抹卡顿
+  let renderPending = false;
+  function requestRender() {
+    if (renderPending) return;
+    renderPending = true;
+    requestAnimationFrame(() => { renderPending = false; render(); });
   }
 
   // 水印命中检测（考虑旋转）
@@ -1014,17 +1032,17 @@
     if (gesture === "draw" && pointers.size === 1) {
       const p = toImage(e.clientX, e.clientY);
       if (appMode === "remove") {
-        strokeTo(p.x, p.y); render();
+        strokeTo(p.x, p.y); requestRender();
       } else if (appMode === "add") {
         const wm = getSelectedWatermark();
         if (isDraggingText && wm) {
           wm.x = p.x - dragOffset.x;
           wm.y = p.y - dragOffset.y;
-          render();
+          requestRender();
         }
       } else if (appMode === "edit") {
         if (editTool === "brush") {
-          editStrokeTo(p.x, p.y); render();
+          editStrokeTo(p.x, p.y); requestRender();
         } else if (editTool === "crop" && cropDragging) {
           cropRect = {
             x: Math.min(cropStart.x, p.x),
@@ -1032,7 +1050,7 @@
             w: Math.abs(p.x - cropStart.x),
             h: Math.abs(p.y - cropStart.y)
           };
-          render();
+          requestRender();
         }
       }
     } else if (gesture === "pinch" && pointers.size >= 2) {
@@ -1322,8 +1340,12 @@
     workCtx.putImageData(img, 0, 0);
   }
   function pushUndo() {
-    if (undoStack.length>=MAX_UNDO) undoStack.shift();
-    undoStack.push(workCtx.getImageData(0,0,workCanvas.width,workCanvas.height));
+    const snap = workCtx.getImageData(0,0,workCanvas.width,workCanvas.height);
+    undoStack.push(snap);
+    undoBytes += snap.data.byteLength;
+    while (undoStack.length > 1 && (undoStack.length > MAX_UNDO || undoBytes > UNDO_BUDGET)) {
+      undoBytes -= undoStack.shift().data.byteLength;
+    }
     $("undoBtn").disabled=false;
     if ($("editUndoBtn")) $("editUndoBtn").disabled = false;
   }
@@ -1400,6 +1422,7 @@
   $("undoBtn").onclick = () => {
     if (!undoStack.length) return;
     const snap = undoStack.pop();
+    undoBytes -= snap.data.byteLength;
     if (workCanvas.width !== snap.width || workCanvas.height !== snap.height) {
       workCanvas.width = snap.width; workCanvas.height = snap.height;
       maskCanvas.width = snap.width; maskCanvas.height = snap.height;
@@ -1418,12 +1441,18 @@
     if (!undoStack.length) return;
     if (!confirm("还原到最初的图片？所有去水印操作会被撤销。")) return;
     workCtx.putImageData(undoStack[0],0,0);
-    undoStack.length=0; $("undoBtn").disabled=true;
+    undoStack.length=0; undoBytes=0; $("undoBtn").disabled=true;
     maskCtx.clearRect(0,0,maskCanvas.width,maskCanvas.height);
     render();
   };
 
   // ---------- Save ----------
+  function getSaveFormat() {
+    const f = $("saveFormat") ? $("saveFormat").value : "png";
+    if (f === "jpeg") return { mime: "image/jpeg", ext: "jpg", quality: 0.9 };
+    if (f === "webp") return { mime: "image/webp", ext: "webp", quality: 0.9 };
+    return { mime: "image/png", ext: "png", quality: undefined };
+  }
   function getFinalCanvas() {
     const hasAnyWm = appMode === "add" && textWatermarks.some(w => w.text && w.text.trim());
     if (!hasAnyWm) return workCanvas;
@@ -1441,12 +1470,13 @@
   }
   $("saveBtn").onclick = () => {
     const finalCanvas = getFinalCanvas();
+    const fmt = getSaveFormat();
     finalCanvas.toBlob(async (blob) => {
       if (!blob) return;
       const prefix = appMode === "add" ? "加水印_" :
                      appMode === "edit" ? "编辑_" : "去水印_";
-      const name = prefix + Date.now() + ".png";
-      const file = new File([blob], name, { type: "image/png" });
+      const name = prefix + Date.now() + "." + fmt.ext;
+      const file = new File([blob], name, { type: fmt.mime });
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         try {
           await navigator.share({ files: [file], title: "处理结果" });
@@ -1460,7 +1490,7 @@
       a.href = url; a.download = name;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 2000);
-    }, "image/png");
+    }, fmt.mime, fmt.quality);
   };
 
   // ---------- File input ----------
@@ -1829,6 +1859,7 @@
     e.target.value = "";
     if (!files || !files.length) return;
     if (!textWatermarks.length) { alert("当前没有水印可用于批量处理"); return; }
+    const fmt = getSaveFormat();
     const nWatermarks = textWatermarks.map(w => watermarkToNormalized(w, workCanvas.width, workCanvas.height));
     const arr = Array.from(files);
     showStatus("批量处理中 0 / " + arr.length);
@@ -1857,14 +1888,14 @@
             const a = document.createElement("a");
             a.href = URL.createObjectURL(blob);
             const baseName = (f.name || "image").replace(/\.[^.]+$/, "");
-            a.download = "加水印_" + baseName + "_" + Date.now() + ".png";
+            a.download = "加水印_" + baseName + "_" + Date.now() + "." + fmt.ext;
             document.body.appendChild(a); a.click(); a.remove();
             setTimeout(() => URL.revokeObjectURL(a.href), 1500);
             URL.revokeObjectURL(url);
             ok++; done++;
             showStatus("批量处理中 " + done + " / " + arr.length);
             setTimeout(() => processNext(idx + 1), 300);
-          }, "image/png");
+          }, fmt.mime, fmt.quality);
         } catch (err) {
           console.error(err); fail++; done++;
           URL.revokeObjectURL(url);
@@ -1912,7 +1943,21 @@
   // ---------- Prevent page scroll/zoom ----------
   document.addEventListener("gesturestart",(e)=>e.preventDefault());
   document.addEventListener("touchmove",(e)=>{ if (e.touches.length>1) e.preventDefault(); }, { passive:false });
-  window.addEventListener("resize", () => { if (hasImage) { const z=zoom; fitView(); if (z>minZoom) {} } });
+  window.addEventListener("resize", () => {
+    if (!hasImage) return;
+    // 屏幕旋转/窗口变化时重新适配；若用户已手动放大则保留放大倍数只重新居中
+    const sw = stage.clientWidth, sh = stage.clientHeight;
+    const oldMin = minZoom;
+    minZoom = Math.min(sw / workCanvas.width, sh / workCanvas.height);
+    if (zoom > oldMin + 1e-6) {
+      zoom = Math.max(minZoom, zoom);
+      tx = (sw - workCanvas.width * zoom) / 2;
+      ty = (sh - workCanvas.height * zoom) / 2;
+      applyTransform();
+    } else {
+      fitView();
+    }
+  });
 
   // ---------- PWA: install prompt ----------
   let deferredPrompt = null;

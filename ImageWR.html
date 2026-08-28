@@ -89,8 +89,6 @@
     flex: 1;
     position: relative;
     display: flex;
-    align-items: center;
-    justify-content: center;
     overflow: auto;
     background:
       linear-gradient(45deg, #16181d 25%, transparent 25%),
@@ -102,7 +100,9 @@
     background-color: #101216;
     padding: 24px;
   }
-  #canvasWrap { position: relative; line-height: 0; box-shadow: 0 8px 40px rgba(0,0,0,.5); }
+  /* margin:auto 兼顾两个目标：图片比舞台小时居中；放大溢出时可完整滚动
+     （纯 justify-content:center 溢出后左侧会滚不到，safe center 老内核不支持） */
+  #canvasWrap { position: relative; line-height: 0; box-shadow: 0 8px 40px rgba(0,0,0,.5); margin: auto; }
   #view { display: block; cursor: crosshair; max-width: none; }
   #brushCursor {
     position: fixed;
@@ -115,6 +115,7 @@
     z-index: 50;
   }
   .drop {
+    margin: auto;
     text-align: center;
     color: var(--muted);
     border: 2px dashed var(--border);
@@ -250,6 +251,16 @@
       <div class="row">
         <button id="saveBtn" disabled>💾 保存结果</button>
       </div>
+      <label class="field">保存格式
+        <select id="saveFormat">
+          <option value="png">PNG · 无损，文件大</option>
+          <option value="jpeg">JPEG · 小文件，适合上传</option>
+          <option value="webp">WebP · 更小，较新浏览器支持</option>
+        </select>
+      </label>
+      <label class="field" id="saveQualityField" style="display:none;">图片质量 <span class="val" id="saveQualityVal">90%</span>
+        <input type="range" id="saveQuality" min="50" max="100" value="90">
+      </label>
     </div>
     <div class="divider" data-mode="remove,add,edit"></div>
     <div class="group" data-mode="remove">
@@ -473,6 +484,10 @@
   let lastPt = null;
   const undoStack = [];     // ImageData snapshots of workCanvas
   const MAX_UNDO = 12;
+  // 撤销栈总内存预算（字节）。4K 图单张快照约 50MB，固定 12 张会占近 600MB，
+  // 超预算丢最旧的快照，避免大图时浏览器内存吃紧卡死。
+  const UNDO_BUDGET = 300 * 1024 * 1024;
+  let undoBytes = 0;
 
   // Text watermark state
   let textWatermarks = []; // 数组，支持多个水印
@@ -669,6 +684,7 @@
     workCtx.drawImage(img, 0, 0);
     maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
     undoStack.length = 0;
+    undoBytes = 0;
     hasImage = true;
     drop.style.display = "none";
     canvasWrap.style.display = "block";
@@ -796,6 +812,15 @@
       viewCtx.strokeRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
       viewCtx.restore();
     }
+  }
+
+  // 指针快速移动时一帧内会连发多次事件，每次都整图重绘会卡顿。
+  // 用 rAF 把一帧内的多次 render 合并成一次。
+  let renderPending = false;
+  function requestRender() {
+    if (renderPending) return;
+    renderPending = true;
+    requestAnimationFrame(() => { renderPending = false; render(); });
   }
 
   // ---------- Edit mode: brush painting on image ----------
@@ -981,7 +1006,7 @@
       if (isDraggingText && wm) {
         wm.x = p.x - dragOffset.x;
         wm.y = p.y - dragOffset.y;
-        render();
+        requestRender();
       } else if (hasImage) {
         view.style.cursor = hitTestWatermarks(p.x, p.y) >= 0 ? "grab" : "default";
       }
@@ -990,7 +1015,7 @@
         updateCursor(e);
         if (editDrawing) {
           editStrokeTo(p.x, p.y);
-          render();
+          requestRender();
         }
       } else if (editTool === "crop" && cropDragging) {
         cropRect = {
@@ -999,13 +1024,13 @@
           w: Math.abs(p.x - cropStart.x),
           h: Math.abs(p.y - cropStart.y)
         };
-        render();
+        requestRender();
       }
     } else {
       updateCursor(e);
       if (drawing) {
         strokeTo(p.x, p.y);
-        render();
+        requestRender();
       }
     }
   });
@@ -1051,8 +1076,13 @@
     return true;
   }
   function pushUndo() {
-    if (undoStack.length >= MAX_UNDO) undoStack.shift();
-    undoStack.push(workCtx.getImageData(0, 0, workCanvas.width, workCanvas.height));
+    const snap = workCtx.getImageData(0, 0, workCanvas.width, workCanvas.height);
+    undoStack.push(snap);
+    undoBytes += snap.data.byteLength;
+    // 数量与内存双重上限；至少保留最初一张（还原按钮要用）
+    while (undoStack.length > 1 && (undoStack.length > MAX_UNDO || undoBytes > UNDO_BUDGET)) {
+      undoBytes -= undoStack.shift().data.byteLength;
+    }
     $("undoBtn").disabled = false;
     const eu = $("editUndoBtn"); if (eu) eu.disabled = false;
   }
@@ -1739,6 +1769,7 @@
   function batchApplyToFiles(files) {
     if (!files || !files.length) return;
     if (!textWatermarks.length) { alert("当前没有水印可用于批量处理"); return; }
+    const fmt = getSaveFormat();
     // snapshot normalized watermarks so relative layout survives resizing
     const nWatermarks = textWatermarks.map(w =>
       watermarkToNormalized(w, workCanvas.width, workCanvas.height));
@@ -1771,7 +1802,7 @@
             const a = document.createElement("a");
             a.href = URL.createObjectURL(blob);
             const baseName = (f.name || "image").replace(/\.[^.]+$/, "");
-            a.download = "加水印_" + baseName + "_" + Date.now() + ".png";
+            a.download = "加水印_" + baseName + "_" + Date.now() + "." + fmt.ext;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -1780,7 +1811,7 @@
             ok++; done++;
             showStatus("批量处理中 " + done + " / " + arr.length);
             setTimeout(() => processNext(idx + 1), 300); // 间隔避开浏览器下载节流
-          }, "image/png");
+          }, fmt.mime, fmt.quality);
         } catch (err) {
           console.error(err);
           fail++; done++;
@@ -1878,6 +1909,7 @@
   $("undoBtn").onclick = () => {
     if (!undoStack.length) return;
     const snap = undoStack.pop();
+    undoBytes -= snap.data.byteLength;
     // cropped/rotated images may have different dimensions
     if (workCanvas.width !== snap.width || workCanvas.height !== snap.height) {
       workCanvas.width = snap.width; workCanvas.height = snap.height;
@@ -1898,6 +1930,7 @@
     const first = undoStack[0];
     workCtx.putImageData(first, 0, 0);
     undoStack.length = 0;
+    undoBytes = 0;
     $("undoBtn").disabled = true;
     maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
     render();
@@ -1911,10 +1944,33 @@
   stage.addEventListener("wheel", (e) => {
     if (!hasImage || !e.ctrlKey) return;
     e.preventDefault();
-    setScale(scale * (e.deltaY < 0 ? 1.1 : 0.9));
+    // 以鼠标位置为中心缩放：缩放前后光标下的图像点保持不动
+    const rect = view.getBoundingClientRect();
+    const px = e.clientX - rect.left, py = e.clientY - rect.top;
+    const newScale = Math.max(0.05, Math.min(8, scale * (e.deltaY < 0 ? 1.1 : 0.9)));
+    const ix = px / scale, iy = py / scale;
+    setScale(newScale);
+    requestAnimationFrame(() => {
+      stage.scrollLeft += ix * newScale - px;
+      stage.scrollTop += iy * newScale - py;
+    });
   }, { passive: false });
 
   // ---------- Save ----------
+  function getSaveFormat() {
+    const f = $("saveFormat") ? $("saveFormat").value : "png";
+    const q = parseInt(($("saveQuality") ? $("saveQuality").value : "90"), 10) / 100;
+    if (f === "jpeg") return { mime: "image/jpeg", ext: "jpg", quality: q };
+    if (f === "webp") return { mime: "image/webp", ext: "webp", quality: q };
+    return { mime: "image/png", ext: "png", quality: undefined };
+  }
+  $("saveFormat").onchange = () => {
+    const isPng = $("saveFormat").value === "png";
+    $("saveQualityField").style.display = isPng ? "none" : "";
+  };
+  $("saveQuality").oninput = (e) => {
+    $("saveQualityVal").textContent = e.target.value + "%";
+  };
   $("saveBtn").onclick = () => {
     let finalCanvas = workCanvas;
     const hasAnyWatermark = appMode === "add" &&
@@ -1930,15 +1986,16 @@
       finalCanvas = composite;
     }
 
+    const fmt = getSaveFormat();
     finalCanvas.toBlob((blob) => {
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       const prefix = appMode === "add" ? "加水印_" :
                      appMode === "edit" ? "编辑_" : "去水印_";
-      a.download = prefix + Date.now() + ".png";
+      a.download = prefix + Date.now() + "." + fmt.ext;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    }, "image/png");
+    }, fmt.mime, fmt.quality);
   };
 
   // ---------- File input / drag / paste ----------
@@ -1978,7 +2035,7 @@
     if (e.key === "Enter") doInpaint();
   });
 
-  window.addEventListener("resize", () => { if (hasImage) render(); });
+  window.addEventListener("resize", () => { if (hasImage) fitToStage(); });
 
   // ---------- PWA: 安装到桌面 ----------
   let deferredPrompt = null;
