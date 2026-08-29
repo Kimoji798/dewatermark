@@ -186,7 +186,6 @@
   /* ---------- 侧边栏收起/展开 ---------- */
   body.sidebarCollapsed .sidebar { display: none; }
   /* ---------- 豆包AI水印模式 ---------- */
-  .drop .pick.doubao { border-color: var(--border); color: var(--text); background: var(--panel-2); margin-top: 10px; }
   #doubaoGroup { display: none; }
   body.doubaoMode .mode-toggle { display: none; }
   body.doubaoMode .sidebar > [data-mode] { display: none !important; }
@@ -544,7 +543,7 @@
       <h2>拖入图片开始</h2>
       <p>支持 JPG / PNG / WebP 等格式<br>也可以点击下方按钮，或直接 Ctrl+V 粘贴截图</p>
       <button class="pick" id="pickBtn">选择图片</button>
-      <button class="pick doubao" id="doubaoBtn">🧿 清除豆包AI水印</button>
+      <button class="pick" id="doubaoBtn">🧿 去豆包水印</button>
     </div>
   <div id="canvasWrap" style="display:none;">
     <canvas id="view"></canvas>
@@ -2476,14 +2475,29 @@
     doubaoMode = true;
     $("doubaoInpaintBtn").disabled = false;
     maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
-    // 桌面工作画布与原图同分辨率,检测框坐标可直接使用
-    const px = Math.max(6, bbox.w * 0.06), py = Math.max(6, bbox.h * 0.10);
-    const x = Math.max(0, Math.floor(bbox.x - px));
-    const y = Math.max(0, Math.floor(bbox.y - py));
-    const w = Math.min(maskCanvas.width - x, Math.ceil(bbox.w + px * 2));
-    const h = Math.min(maskCanvas.height - y, Math.ceil(bbox.h + py * 2));
-    maskCtx.fillStyle = "#ff3b3b";
-    maskCtx.fillRect(x, y, w, h);
+    if (bbox && bbox.mask && bbox.mask.width) {
+      // 只把检测到的白色笔画涂成红色(和画笔同色),不是整个框涂满
+      const mc = document.createElement("canvas");
+      mc.width = bbox.mask.width;
+      mc.height = bbox.mask.height;
+      const mctx = mc.getContext("2d");
+      mctx.drawImage(bbox.mask, 0, 0);
+      mctx.globalCompositeOperation = "source-in";
+      mctx.fillStyle = "#ff3b3b";
+      mctx.fillRect(0, 0, mc.width, mc.height);
+      maskCtx.imageSmoothingEnabled = false;
+      maskCtx.drawImage(mc, 0, 0, maskCanvas.width, maskCanvas.height);
+      maskCtx.imageSmoothingEnabled = true;
+    } else {
+      // 兜底:用水印外框涂满(桌面工作画布与原图同分辨率,坐标可直接使用)
+      const px = Math.max(6, bbox.w * 0.06), py = Math.max(6, bbox.h * 0.10);
+      const x = Math.max(0, Math.floor(bbox.x - px));
+      const y = Math.max(0, Math.floor(bbox.y - py));
+      const w = Math.min(maskCanvas.width - x, Math.ceil(bbox.w + px * 2));
+      const h = Math.min(maskCanvas.height - y, Math.ceil(bbox.h + py * 2));
+      maskCtx.fillStyle = "#ff3b3b";
+      maskCtx.fillRect(x, y, w, h);
+    }
     document.body.classList.add("doubaoMode");
     setCompare(false);
     if (hasImage) view.style.cursor = "default";

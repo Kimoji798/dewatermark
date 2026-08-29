@@ -422,7 +422,6 @@
     display: none;
   }
   #toast.show { opacity: 1; }
-  .drop .big.doubao { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
 </style>
 </head>
 <body>
@@ -451,7 +450,7 @@
     <h2>选择要去水印的图片</h2>
     <p>从相册选择一张图片<br>全程在手机本地处理，不会上传</p>
     <button class="big" id="pickBtn">🖼 从相册选择</button>
-    <button class="big doubao" id="doubaoBtn">🧿 清除豆包AI水印</button>
+    <button class="big" id="doubaoBtn">🧿 去豆包水印</button>
   </div>
   <div class="mode-hint" id="modeHint" style="display:none;"><b>单指</b>涂抹水印 · <b>双指</b>缩放/移动</div>
   <div class="status" id="status">
@@ -2083,7 +2082,9 @@
       mctx.globalCompositeOperation = "source-in";
       mctx.fillStyle = "#ff3b3b";
       mctx.fillRect(0, 0, mc.width, mc.height);
+      maskCtx.imageSmoothingEnabled = false;
       maskCtx.drawImage(mc, 0, 0, maskCanvas.width, maskCanvas.height);
+      maskCtx.imageSmoothingEnabled = true;
     } else {
       // 兜底:用水印外框涂满
       const px = Math.max(6, bbox.w * 0.06), py = Math.max(6, bbox.h * 0.10);
